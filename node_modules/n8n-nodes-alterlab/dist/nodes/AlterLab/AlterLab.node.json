@@ -1,0 +1,32 @@
+{
+	"node": "n8n-nodes-alterlab.alterLab",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Data & Storage"],
+	"subcategories": {
+		"Data & Storage": ["Web Scraping"]
+	},
+	"resources": {
+		"primaryDocumentation": [
+			{
+				"url": "https://docs.alterlab.io/api?utm_source=n8n&utm_medium=integration&utm_campaign=community_node"
+			}
+		]
+	},
+	"alias": [
+		"scrape",
+		"web scraping",
+		"crawl",
+		"crawler",
+		"extract",
+		"anti-bot",
+		"proxy",
+		"screenshot",
+		"pdf",
+		"ocr",
+		"headless browser",
+		"data extraction",
+		"web data",
+		"scraper"
+	]
+}
