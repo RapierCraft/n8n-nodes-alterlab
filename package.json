@@ -1,6 +1,6 @@
 {
 	"name": "n8n-nodes-alterlab",
-	"version": "0.2.1",
+	"version": "0.2.2",
 	"description": "n8n community node for AlterLab web scraping API — anti-bot bypass, JS rendering, structured extraction, OCR, and more.",
 	"keywords": [
 		"n8n-community-node-package",
@@ -22,7 +22,7 @@
 	"homepage": "https://alterlab.io?utm_source=n8n&utm_medium=integration&utm_campaign=community_node",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/alterlabio/n8n-nodes-alterlab.git"
+		"url": "https://github.com/RapierCraft/n8n-nodes-alterlab.git"
 	},
 	"author": {
 		"name": "AlterLab",
@@ -58,7 +58,6 @@
 	"peerDependencies": {
 		"n8n-workflow": "*"
 	},
-	"dependencies": {
-		"n8n-nodes-alterlab": "^0.2.0"
-	}
+	"dependencies": {}
+
 }
