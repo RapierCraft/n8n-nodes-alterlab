@@ -1,1 +1,0 @@
-{"version":3,"file":"AlterLab.node.d.ts","sourceRoot":"","sources":["../../../nodes/AlterLab/AlterLab.node.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAEX,iBAAiB,EACjB,kBAAkB,EAClB,SAAS,EACT,oBAAoB,EAEpB,MAAM,cAAc,CAAC;AAKtB,qBAAa,QAAS,YAAW,SAAS;IACzC,WAAW,EAAE,oBAAoB,CAiY/B;IAEI,OAAO,CAAC,IAAI,EAAE,iBAAiB,GAAG,OAAO,CAAC,kBAAkB,EAAE,EAAE,CAAC;CAoRvE"}
