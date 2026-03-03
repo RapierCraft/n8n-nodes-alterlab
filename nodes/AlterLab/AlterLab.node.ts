@@ -10,6 +10,14 @@ import { NodeApiError, NodeOperationError } from "n8n-workflow";
 
 const UTM = "utm_source=n8n&utm_medium=integration&utm_campaign=community_node";
 
+const BASE_URL = "https://api.alterlab.io";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    globalThis.setTimeout(resolve, ms);
+  });
+}
+
 export class AlterLab implements INodeType {
   description: INodeTypeDescription = {
     displayName: "AlterLab",
@@ -36,6 +44,9 @@ export class AlterLab implements INodeType {
         displayName: "OAuth2 (Recommended)",
       },
     ],
+    requestDefaults: {
+      baseURL: BASE_URL,
+    },
     properties: [
       // ── Operation ────────────────────────────────────────
       {
@@ -510,7 +521,7 @@ export class AlterLab implements INodeType {
               authName,
               {
                 method: "POST",
-                url: "/api/v1/scrape/estimate",
+                url: `${BASE_URL}/api/v1/scrape/estimate`,
                 body,
                 json: true,
                 returnFullResponse: true,
@@ -693,7 +704,7 @@ export class AlterLab implements INodeType {
           authName,
           {
             method: "POST",
-            url: "/api/v1/scrape",
+            url: `${BASE_URL}/api/v1/scrape`,
             body,
             json: true,
             returnFullResponse: true,
@@ -713,7 +724,7 @@ export class AlterLab implements INodeType {
           const pollStart = Date.now();
 
           while (Date.now() - pollStart < maxPollTime) {
-            await new Promise<void>((resolve) => setTimeout(resolve, delay));
+            await sleep(delay);
             delay = Math.min(delay * 2, maxDelay);
 
             const pollResponse =
@@ -722,7 +733,7 @@ export class AlterLab implements INodeType {
                 authName,
                 {
                   method: "GET",
-                  url: `/api/v1/jobs/${jobId}`,
+                  url: `${BASE_URL}/api/v1/jobs/${jobId}`,
                   json: true,
                   returnFullResponse: true,
                   ignoreHttpStatusErrors: true,
