@@ -145,10 +145,23 @@ export class AlterLab implements INodeType {
             options: [
               { name: "Markdown", value: "markdown" },
               { name: "JSON", value: "json" },
+              {
+                name: "JSON v2 (Structured)",
+                value: "json_v2",
+                description:
+                  "Deterministic extraction with section tree, classified links, and structured tables",
+              },
               { name: "HTML", value: "html" },
               { name: "Text", value: "text" },
+              {
+                name: "RAG (Chunked)",
+                value: "rag",
+                description:
+                  "Chunked markdown with token counts and metadata for vector DB ingestion",
+              },
             ],
-            description: "Output formats for content transformation",
+            description:
+              "Output formats. JSON v2 provides structured extraction with section trees. RAG produces chunked output optimized for vector databases.",
           },
           {
             displayName: "Include Raw HTML",
@@ -832,7 +845,9 @@ export class AlterLab implements INodeType {
             (content as Record<string, unknown>).markdown ?? null;
           output.text = (content as Record<string, unknown>).text ?? null;
           output.json = (content as Record<string, unknown>).json ?? null;
+          output.jsonV2 = (content as Record<string, unknown>).json_v2 ?? null;
           output.html = (content as Record<string, unknown>).html ?? null;
+          output.rag = (content as Record<string, unknown>).rag ?? null;
         } else {
           output.markdown = content ?? null;
         }
@@ -894,7 +909,9 @@ function formatScrapeResult(data: Record<string, unknown>): IDataObject {
     output.markdown = (content as Record<string, unknown>).markdown ?? null;
     output.text = (content as Record<string, unknown>).text ?? null;
     output.json = (content as Record<string, unknown>).json ?? null;
+    output.jsonV2 = (content as Record<string, unknown>).json_v2 ?? null;
     output.html = (content as Record<string, unknown>).html ?? null;
+    output.rag = (content as Record<string, unknown>).rag ?? null;
   } else {
     output.markdown = content ?? null;
   }
