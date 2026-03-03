@@ -26,7 +26,7 @@ export class AlterLab implements INodeType {
     group: ["transform"],
     version: 1,
     subtitle:
-      '={{$parameter["operation"] === "estimateCost" ? "cost estimate" : $parameter["mode"] + " scrape"}}',
+      '={{$parameter["operation"] === "estimateCost" ? "cost estimate" : $parameter["operation"] === "batchScrape" ? "batch scrape" : $parameter["mode"] + " scrape"}}',
     description:
       "Scrape any website with anti-bot bypass, JS rendering, structured extraction, OCR, and more",
     defaults: {
@@ -61,6 +61,12 @@ export class AlterLab implements INodeType {
             value: "scrape",
             description: "Scrape a URL and return its content",
             action: "Scrape a URL",
+          },
+          {
+            name: "Batch Scrape",
+            value: "batchScrape",
+            description: "Scrape up to 100 URLs in a single batch request",
+            action: "Scrape a batch of URLs",
           },
           {
             name: "Estimate Cost",
@@ -127,7 +133,7 @@ export class AlterLab implements INodeType {
         default: {},
         displayOptions: {
           show: {
-            operation: ["scrape"],
+            operation: ["scrape", "batchScrape"],
           },
         },
         options: [
@@ -171,7 +177,7 @@ export class AlterLab implements INodeType {
         default: {},
         displayOptions: {
           show: {
-            operation: ["scrape"],
+            operation: ["scrape", "batchScrape"],
           },
         },
         options: [
@@ -318,7 +324,7 @@ export class AlterLab implements INodeType {
         default: {},
         displayOptions: {
           show: {
-            operation: ["scrape"],
+            operation: ["scrape", "batchScrape"],
           },
         },
         options: [
@@ -448,16 +454,61 @@ export class AlterLab implements INodeType {
           },
         ],
       },
+
+      // ── Batch Options ────────────────────────────────────
+      {
+        displayName: "Webhook URL",
+        name: "webhookUrl",
+        type: "string",
+        default: "",
+        placeholder: "https://your-server.com/webhook",
+        description:
+          "Optional URL to receive a webhook notification when the batch completes",
+        displayOptions: {
+          show: {
+            operation: ["batchScrape"],
+          },
+        },
+      },
+      {
+        displayName: "Polling Timeout (Seconds)",
+        name: "batchPollingTimeout",
+        type: "number",
+        default: 300,
+        typeOptions: { minValue: 30, maxValue: 900 },
+        description:
+          "Maximum time to wait for the batch to complete (30-900 seconds)",
+        displayOptions: {
+          show: {
+            operation: ["batchScrape"],
+          },
+        },
+      },
     ],
   };
 
   async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
     const items = this.getInputData();
+    const operation = this.getNodeParameter("operation", 0) as string;
+
+    // Detect credential type once for all items
+    let authName = "alterLabApi";
+    try {
+      await this.getCredentials("alterLabOAuth2Api");
+      authName = "alterLabOAuth2Api";
+    } catch {
+      // OAuth2 not configured, fall back to API key
+    }
+
+    // ── Batch Scrape operation ──────────────────────────
+    if (operation === "batchScrape") {
+      return executeBatchScrape(this, items, authName);
+    }
+
     const results: INodeExecutionData[] = [];
 
     for (let i = 0; i < items.length; i++) {
       try {
-        const operation = this.getNodeParameter("operation", i) as string;
         const url = this.getNodeParameter("url", i) as string;
         const mode = this.getNodeParameter("mode", i) as string;
 
@@ -505,14 +556,6 @@ export class AlterLab implements INodeType {
           if (costControls.failFast) costCtrl.fail_fast = true;
           if (Object.keys(costCtrl).length > 0) {
             body.cost_controls = costCtrl;
-          }
-
-          let authName = "alterLabApi";
-          try {
-            await this.getCredentials("alterLabOAuth2Api");
-            authName = "alterLabOAuth2Api";
-          } catch {
-            // OAuth2 not configured, fall back to API key
           }
 
           const response =
@@ -689,15 +732,6 @@ export class AlterLab implements INodeType {
           body.cost_controls = costCtrl;
         }
 
-        // ── Detect credential type ────────────────────────
-        let authName = "alterLabApi";
-        try {
-          await this.getCredentials("alterLabOAuth2Api");
-          authName = "alterLabOAuth2Api";
-        } catch {
-          // OAuth2 not configured, fall back to API key
-        }
-
         // ── Make the API call ─────────────────────────────
         let response = await this.helpers.httpRequestWithAuthentication.call(
           this,
@@ -837,6 +871,317 @@ export class AlterLab implements INodeType {
 
     return [results];
   }
+}
+
+/**
+ * Format a single scrape result into n8n output format.
+ */
+function formatScrapeResult(data: Record<string, unknown>): IDataObject {
+  const content = data.content as Record<string, unknown> | string | undefined;
+
+  const output: IDataObject = {
+    url: (data.url as string) ?? "",
+    statusCode: (data.status_code as number) ?? 0,
+    title: (data.title as string) ?? null,
+    author: (data.author as string) ?? null,
+    publishedAt: (data.published_at as string) ?? null,
+    cached: (data.cached as boolean) ?? false,
+    responseTimeMs: (data.response_time_ms as number) ?? 0,
+    sizeBytes: (data.size_bytes as number) ?? 0,
+  };
+
+  if (content && typeof content === "object") {
+    output.markdown = (content as Record<string, unknown>).markdown ?? null;
+    output.text = (content as Record<string, unknown>).text ?? null;
+    output.json = (content as Record<string, unknown>).json ?? null;
+    output.html = (content as Record<string, unknown>).html ?? null;
+  } else {
+    output.markdown = content ?? null;
+  }
+
+  output.filteredContent = data.filtered_content ?? null;
+  output.extractionMethod = data.extraction_method ?? null;
+  output.screenshotUrl = data.screenshot_url ?? null;
+  output.pdfUrl = data.pdf_url ?? null;
+  output.ocrResults = data.ocr_results ?? null;
+  output.rawHtml = data.raw_html ?? null;
+
+  const billing = data.billing as Record<string, unknown> | undefined;
+  output.billing = {
+    cost: billing?.total_credits ?? data.credits_used ?? 0,
+    tier: billing?.tier_used ?? data.tier_used ?? "unknown",
+    savings: billing?.savings ?? 0,
+    suggestion: billing?.optimization_suggestion ?? null,
+  };
+
+  return output;
+}
+
+/**
+ * Build a per-URL request body for the batch API from node parameters.
+ */
+function buildBatchItemBody(
+  ctx: IExecuteFunctions,
+  itemIndex: number,
+): Record<string, unknown> {
+  const url = ctx.getNodeParameter("url", itemIndex) as string;
+  const mode = ctx.getNodeParameter("mode", itemIndex) as string;
+  const outputOptions = ctx.getNodeParameter(
+    "outputOptions",
+    itemIndex,
+    {},
+  ) as {
+    formats?: string[];
+    includeRawHtml?: boolean;
+    timeout?: number;
+  };
+  const executionMode = ctx.getNodeParameter(
+    "executionMode",
+    itemIndex,
+    {},
+  ) as {
+    cache?: boolean;
+  };
+  const advancedOptions = ctx.getNodeParameter(
+    "advancedOptions",
+    itemIndex,
+    {},
+  ) as {
+    renderJs?: boolean;
+    screenshot?: boolean;
+    generatePdf?: boolean;
+    ocr?: boolean;
+    useProxy?: boolean;
+    proxyCountry?: string;
+    waitCondition?: string;
+    removeCookieBanners?: boolean;
+  };
+  const extraction = ctx.getNodeParameter("extraction", itemIndex, {}) as {
+    extractionProfile?: string;
+    extractionPrompt?: string;
+    extractionSchema?: string;
+  };
+  const costControls = ctx.getNodeParameter("costControls", itemIndex, {}) as {
+    maxCredits?: number;
+    forceTier?: string;
+    maxTier?: string;
+    preferCost?: boolean;
+    preferSpeed?: boolean;
+    failFast?: boolean;
+  };
+
+  const body: Record<string, unknown> = { url, mode };
+
+  if (outputOptions.formats?.length) {
+    body.formats = outputOptions.formats;
+  }
+  if (outputOptions.includeRawHtml) {
+    body.include_raw_html = true;
+  }
+  if (outputOptions.timeout && outputOptions.timeout !== 90) {
+    body.timeout = outputOptions.timeout;
+  }
+  if (executionMode.cache) {
+    body.cache = true;
+  }
+
+  const advanced: Record<string, unknown> = {};
+  if (advancedOptions.renderJs) advanced.render_js = true;
+  if (advancedOptions.screenshot) advanced.screenshot = true;
+  if (advancedOptions.generatePdf) advanced.generate_pdf = true;
+  if (advancedOptions.ocr) advanced.ocr = true;
+  if (advancedOptions.useProxy) advanced.use_proxy = true;
+  if (advancedOptions.proxyCountry) {
+    advanced.proxy_country = advancedOptions.proxyCountry;
+  }
+  if (
+    advancedOptions.waitCondition &&
+    advancedOptions.waitCondition !== "networkidle"
+  ) {
+    advanced.wait_condition = advancedOptions.waitCondition;
+  }
+  if (advancedOptions.removeCookieBanners === false) {
+    advanced.remove_cookie_banners = false;
+  }
+  if (Object.keys(advanced).length > 0) {
+    body.advanced = advanced;
+  }
+
+  if (extraction.extractionProfile && extraction.extractionProfile !== "auto") {
+    body.extraction_profile = extraction.extractionProfile;
+  }
+  if (extraction.extractionPrompt) {
+    body.extraction_prompt = extraction.extractionPrompt;
+  }
+  if (extraction.extractionSchema) {
+    try {
+      body.extraction_schema =
+        typeof extraction.extractionSchema === "string"
+          ? JSON.parse(extraction.extractionSchema)
+          : extraction.extractionSchema;
+    } catch {
+      throw new NodeOperationError(
+        ctx.getNode(),
+        "Invalid JSON in Extraction Schema",
+        { itemIndex },
+      );
+    }
+  }
+
+  const costCtrl: Record<string, unknown> = {};
+  if (costControls.maxCredits && costControls.maxCredits > 0) {
+    costCtrl.max_credits = costControls.maxCredits;
+  }
+  if (costControls.forceTier) costCtrl.force_tier = costControls.forceTier;
+  if (costControls.maxTier) costCtrl.max_tier = costControls.maxTier;
+  if (costControls.preferCost) costCtrl.prefer_cost = true;
+  if (costControls.preferSpeed) costCtrl.prefer_speed = true;
+  if (costControls.failFast) costCtrl.fail_fast = true;
+  if (Object.keys(costCtrl).length > 0) {
+    body.cost_controls = costCtrl;
+  }
+
+  return body;
+}
+
+/**
+ * Execute batch scrape: collect all input items into one batch API call,
+ * poll for completion, and return one output item per URL result.
+ */
+async function executeBatchScrape(
+  ctx: IExecuteFunctions,
+  items: INodeExecutionData[],
+  authName: string,
+): Promise<INodeExecutionData[][]> {
+  if (items.length > 100) {
+    throw new NodeOperationError(
+      ctx.getNode(),
+      `Batch scrape supports up to 100 URLs, but ${items.length} items were provided. Split your data into smaller batches upstream.`,
+    );
+  }
+
+  // Build batch request body from all input items
+  const batchUrls: Record<string, unknown>[] = [];
+  for (let i = 0; i < items.length; i++) {
+    batchUrls.push(buildBatchItemBody(ctx, i));
+  }
+
+  const body: Record<string, unknown> = { urls: batchUrls };
+
+  const webhookUrl = ctx.getNodeParameter("webhookUrl", 0, "") as string;
+  if (webhookUrl) {
+    body.webhook_url = webhookUrl;
+  }
+
+  // Submit batch
+  const response = await ctx.helpers.httpRequestWithAuthentication.call(
+    ctx,
+    authName,
+    {
+      method: "POST",
+      url: "/api/v1/batch",
+      body,
+      json: true,
+      returnFullResponse: true,
+      ignoreHttpStatusErrors: true,
+    },
+  );
+
+  const statusCode = (response as { statusCode: number }).statusCode;
+  const responseBody = (response as { body: Record<string, unknown> }).body;
+
+  if (statusCode >= 400) {
+    handleApiError(ctx, statusCode, responseBody as JsonObject, 0);
+  }
+
+  const batchId = responseBody.batch_id as string;
+
+  // Poll for completion with exponential backoff
+  const pollingTimeout = ctx.getNodeParameter(
+    "batchPollingTimeout",
+    0,
+    300,
+  ) as number;
+  const maxPollTime = pollingTimeout * 1000;
+  let delay = 1000;
+  const maxDelay = 5000;
+  const pollStart = Date.now();
+  let batchResult: Record<string, unknown> | undefined;
+
+  while (Date.now() - pollStart < maxPollTime) {
+    await new Promise<void>((resolve) => setTimeout(resolve, delay));
+    delay = Math.min(delay * 2, maxDelay);
+
+    const pollResponse = await ctx.helpers.httpRequestWithAuthentication.call(
+      ctx,
+      authName,
+      {
+        method: "GET",
+        url: `/api/v1/batch/${batchId}`,
+        json: true,
+        returnFullResponse: true,
+        ignoreHttpStatusErrors: true,
+      },
+    );
+
+    const pollStatusCode = (pollResponse as { statusCode: number }).statusCode;
+    const pollBody = (pollResponse as { body: Record<string, unknown> }).body;
+
+    if (pollStatusCode >= 400) {
+      handleApiError(ctx, pollStatusCode, pollBody as JsonObject, 0);
+    }
+
+    const status = pollBody.status as string;
+    if (status === "completed" || status === "partial" || status === "failed") {
+      batchResult = pollBody;
+      break;
+    }
+  }
+
+  if (!batchResult) {
+    throw new NodeOperationError(
+      ctx.getNode(),
+      `Batch ${batchId} timed out after ${pollingTimeout}s. Use a webhook URL to receive results asynchronously, or increase the polling timeout.`,
+    );
+  }
+
+  // Map results to output items
+  const batchItems = (batchResult.items as Record<string, unknown>[]) ?? [];
+  const results: INodeExecutionData[] = [];
+
+  for (const batchItem of batchItems) {
+    if (batchItem.status === "succeeded" && batchItem.result) {
+      const output = formatScrapeResult(
+        batchItem.result as Record<string, unknown>,
+      );
+      output.batchId = batchId;
+      output.jobId = (batchItem.job_id as string) ?? "";
+      results.push({ json: output });
+    } else {
+      results.push({
+        json: {
+          url: (batchItem.url as string) ?? "",
+          jobId: (batchItem.job_id as string) ?? "",
+          batchId,
+          status: (batchItem.status as string) ?? "unknown",
+          error: (batchItem.error as string) ?? "Scrape failed",
+        },
+      });
+    }
+  }
+
+  // Add batch summary to first result
+  if (results.length > 0) {
+    (results[0].json as IDataObject).batchSummary = {
+      batchId,
+      total: batchResult.total,
+      completed: batchResult.completed,
+      failed: batchResult.failed,
+      status: batchResult.status,
+    };
+  }
+
+  return [results];
 }
 
 function handleApiError(
