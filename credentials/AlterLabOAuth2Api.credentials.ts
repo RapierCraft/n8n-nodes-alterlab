@@ -1,4 +1,5 @@
 import type {
+	ICredentialTestRequest,
 	ICredentialType,
 	INodeProperties,
 } from 'n8n-workflow';
@@ -61,4 +62,12 @@ export class AlterLabOAuth2Api implements ICredentialType {
 			default: 'body',
 		},
 	];
+
+	test: ICredentialTestRequest = {
+		request: {
+			baseURL: 'https://api.alterlab.io',
+			url: '/api/v1/usage',
+			method: 'GET',
+		},
+	};
 }
