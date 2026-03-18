@@ -394,6 +394,58 @@ export class AlterLab implements INodeType {
         ],
       },
 
+      // ── Session / Authentication ─────────────────────────
+      {
+        displayName: "Session",
+        name: "session",
+        type: "collection",
+        placeholder: "Add Option",
+        default: {},
+        displayOptions: {
+          show: {
+            operation: ["scrape", "batchScrape"],
+          },
+        },
+        options: [
+          {
+            displayName: "Use Authenticated Session",
+            name: "useSession",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to inject your own cookies for authenticated scraping (e.g. logged-in pages, member areas)",
+          },
+          {
+            displayName: "Session ID",
+            name: "sessionId",
+            type: "string",
+            default: "",
+            placeholder: "e.g. a1b2c3d4-5678-90ab-cdef-1234567890ab",
+            description:
+              "UUID of a stored session from the AlterLab dashboard. The stored session cookies will be injected automatically.",
+            displayOptions: {
+              show: {
+                useSession: [true],
+              },
+            },
+          },
+          {
+            displayName: "Inline Cookies",
+            name: "cookies",
+            type: "json",
+            default: "",
+            placeholder: '{"session_id": "abc123", "auth_token": "xyz"}',
+            description:
+              "Cookie key-value pairs as JSON to inject into the request. Use this instead of Session ID for one-off authenticated scrapes.",
+            displayOptions: {
+              show: {
+                useSession: [true],
+              },
+            },
+          },
+        ],
+      },
+
       // ── Cost Controls ────────────────────────────────────
       {
         displayName: "Cost Controls",
@@ -745,6 +797,41 @@ export class AlterLab implements INodeType {
           body.cost_controls = costCtrl;
         }
 
+        // Session / authenticated scraping → injected into "advanced"
+        const session = this.getNodeParameter("session", i, {}) as {
+          useSession?: boolean;
+          sessionId?: string;
+          cookies?: string;
+        };
+        if (session.useSession) {
+          // Ensure advanced object exists in body
+          if (!body.advanced) {
+            body.advanced = advanced;
+          }
+          const adv = body.advanced as Record<string, unknown>;
+          if (session.sessionId) {
+            adv.session_id = session.sessionId;
+          }
+          if (session.cookies) {
+            try {
+              adv.cookies =
+                typeof session.cookies === "string"
+                  ? JSON.parse(session.cookies)
+                  : session.cookies;
+            } catch {
+              throw new NodeOperationError(
+                this.getNode(),
+                "Invalid JSON in Inline Cookies",
+                { itemIndex: i },
+              );
+            }
+          }
+          // Re-assign in case advanced was empty before
+          if (Object.keys(adv).length > 0) {
+            body.advanced = adv;
+          }
+        }
+
         // ── Make the API call ─────────────────────────────
         let response = await this.helpers.httpRequestWithAuthentication.call(
           this,
@@ -1056,6 +1143,39 @@ function buildBatchItemBody(
   if (costControls.failFast) costCtrl.fail_fast = true;
   if (Object.keys(costCtrl).length > 0) {
     body.cost_controls = costCtrl;
+  }
+
+  // Session / authenticated scraping → injected into "advanced"
+  const session = ctx.getNodeParameter("session", itemIndex, {}) as {
+    useSession?: boolean;
+    sessionId?: string;
+    cookies?: string;
+  };
+  if (session.useSession) {
+    if (!body.advanced) {
+      body.advanced = advanced;
+    }
+    const adv = body.advanced as Record<string, unknown>;
+    if (session.sessionId) {
+      adv.session_id = session.sessionId;
+    }
+    if (session.cookies) {
+      try {
+        adv.cookies =
+          typeof session.cookies === "string"
+            ? JSON.parse(session.cookies)
+            : session.cookies;
+      } catch {
+        throw new NodeOperationError(
+          ctx.getNode(),
+          "Invalid JSON in Inline Cookies",
+          { itemIndex },
+        );
+      }
+    }
+    if (Object.keys(adv).length > 0) {
+      body.advanced = adv;
+    }
   }
 
   return body;
