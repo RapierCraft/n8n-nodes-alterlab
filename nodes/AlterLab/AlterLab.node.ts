@@ -10,14 +10,6 @@ import { NodeApiError, NodeOperationError } from "n8n-workflow";
 
 const UTM = "utm_source=n8n&utm_medium=integration&utm_campaign=community_node";
 
-const BASE_URL = "https://api.alterlab.io";
-
-function sleep(ms: number): Promise<void> {
-  return new Promise<void>((resolve) => {
-    globalThis.setTimeout(resolve, ms);
-  });
-}
-
 export class AlterLab implements INodeType {
   description: INodeTypeDescription = {
     displayName: "AlterLab",
@@ -26,7 +18,7 @@ export class AlterLab implements INodeType {
     group: ["transform"],
     version: 1,
     subtitle:
-      '={{$parameter["operation"] === "estimateCost" ? "cost estimate" : $parameter["operation"] === "batchScrape" ? "batch scrape" : $parameter["mode"] + " scrape"}}',
+      '={{$parameter["resource"] === "session" ? "session " + $parameter["sessionOperation"] : ($parameter["operation"] === "estimateCost" ? "cost estimate" : $parameter["mode"] + " scrape")}}',
     description:
       "Scrape any website with anti-bot bypass, JS rendering, structured extraction, OCR, and more",
     defaults: {
@@ -44,14 +36,11 @@ export class AlterLab implements INodeType {
         displayName: "OAuth2 (Recommended)",
       },
     ],
-    requestDefaults: {
-      baseURL: BASE_URL,
-    },
     properties: [
-      // ── Operation ────────────────────────────────────────
+      // ── Resource ────────────────────────────────────────
       {
-        displayName: "Operation",
-        name: "operation",
+        displayName: "Resource",
+        name: "resource",
         type: "options",
         noDataExpression: true,
         default: "scrape",
@@ -59,14 +48,40 @@ export class AlterLab implements INodeType {
           {
             name: "Scrape",
             value: "scrape",
-            description: "Scrape a URL and return its content",
-            action: "Scrape a URL",
+            description: "Scrape websites and extract content",
           },
           {
-            name: "Batch Scrape",
-            value: "batchScrape",
-            description: "Scrape up to 100 URLs in a single batch request",
-            action: "Scrape a batch of URLs",
+            name: "Session",
+            value: "session",
+            description:
+              "Manage stored browser sessions for authenticated scraping",
+          },
+        ],
+        description: "The resource to operate on",
+      },
+
+      // ══════════════════════════════════════════════════════
+      //  SCRAPE RESOURCE
+      // ══════════════════════════════════════════════════════
+
+      // ── Scrape Operation ────────────────────────────────
+      {
+        displayName: "Operation",
+        name: "operation",
+        type: "options",
+        noDataExpression: true,
+        default: "scrape",
+        displayOptions: {
+          show: {
+            resource: ["scrape"],
+          },
+        },
+        options: [
+          {
+            name: "Scrape",
+            value: "scrape",
+            description: "Scrape a URL and return its content",
+            action: "Scrape a URL",
           },
           {
             name: "Estimate Cost",
@@ -88,6 +103,11 @@ export class AlterLab implements INodeType {
         required: true,
         placeholder: "https://www.example.com/page",
         description: "The URL to scrape",
+        displayOptions: {
+          show: {
+            resource: ["scrape"],
+          },
+        },
       },
       {
         displayName: "Mode",
@@ -122,6 +142,11 @@ export class AlterLab implements INodeType {
           },
         ],
         description: "Scraping mode to use",
+        displayOptions: {
+          show: {
+            resource: ["scrape"],
+          },
+        },
       },
 
       // ── Output Options ───────────────────────────────────
@@ -133,7 +158,8 @@ export class AlterLab implements INodeType {
         default: {},
         displayOptions: {
           show: {
-            operation: ["scrape", "batchScrape"],
+            resource: ["scrape"],
+            operation: ["scrape"],
           },
         },
         options: [
@@ -145,23 +171,10 @@ export class AlterLab implements INodeType {
             options: [
               { name: "Markdown", value: "markdown" },
               { name: "JSON", value: "json" },
-              {
-                name: "JSON v2 (Structured)",
-                value: "json_v2",
-                description:
-                  "Deterministic extraction with section tree, classified links, and structured tables",
-              },
               { name: "HTML", value: "html" },
               { name: "Text", value: "text" },
-              {
-                name: "RAG (Chunked)",
-                value: "rag",
-                description:
-                  "Chunked markdown with token counts and metadata for vector DB ingestion",
-              },
             ],
-            description:
-              "Output formats. JSON v2 provides structured extraction with section trees. RAG produces chunked output optimized for vector databases.",
+            description: "Output formats for content transformation",
           },
           {
             displayName: "Include Raw HTML",
@@ -190,7 +203,8 @@ export class AlterLab implements INodeType {
         default: {},
         displayOptions: {
           show: {
-            operation: ["scrape", "batchScrape"],
+            resource: ["scrape"],
+            operation: ["scrape"],
           },
         },
         options: [
@@ -224,6 +238,11 @@ export class AlterLab implements INodeType {
         type: "collection",
         placeholder: "Add Option",
         default: {},
+        displayOptions: {
+          show: {
+            resource: ["scrape"],
+          },
+        },
         options: [
           {
             displayName: "Render JavaScript",
@@ -325,6 +344,15 @@ export class AlterLab implements INodeType {
             description:
               "Whether to remove cookie consent banners before content extraction",
           },
+          {
+            displayName: "Session ID",
+            name: "sessionId",
+            type: "string",
+            default: "",
+            placeholder: "e.g. a1b2c3d4-e5f6-...",
+            description:
+              "Use a stored session for authenticated scraping (UUID from Sessions resource)",
+          },
         ],
       },
 
@@ -337,7 +365,8 @@ export class AlterLab implements INodeType {
         default: {},
         displayOptions: {
           show: {
-            operation: ["scrape", "batchScrape"],
+            resource: ["scrape"],
+            operation: ["scrape"],
           },
         },
         options: [
@@ -394,58 +423,6 @@ export class AlterLab implements INodeType {
         ],
       },
 
-      // ── Session / Authentication ─────────────────────────
-      {
-        displayName: "Session",
-        name: "session",
-        type: "collection",
-        placeholder: "Add Option",
-        default: {},
-        displayOptions: {
-          show: {
-            operation: ["scrape", "batchScrape"],
-          },
-        },
-        options: [
-          {
-            displayName: "Use Authenticated Session",
-            name: "useSession",
-            type: "boolean",
-            default: false,
-            description:
-              "Whether to inject your own cookies for authenticated scraping (e.g. logged-in pages, member areas)",
-          },
-          {
-            displayName: "Session ID",
-            name: "sessionId",
-            type: "string",
-            default: "",
-            placeholder: "e.g. a1b2c3d4-5678-90ab-cdef-1234567890ab",
-            description:
-              "UUID of a stored session from the AlterLab dashboard. The stored session cookies will be injected automatically.",
-            displayOptions: {
-              show: {
-                useSession: [true],
-              },
-            },
-          },
-          {
-            displayName: "Inline Cookies",
-            name: "cookies",
-            type: "json",
-            default: "",
-            placeholder: '{"session_id": "abc123", "auth_token": "xyz"}',
-            description:
-              "Cookie key-value pairs as JSON to inject into the request. Use this instead of Session ID for one-off authenticated scrapes.",
-            displayOptions: {
-              show: {
-                useSession: [true],
-              },
-            },
-          },
-        ],
-      },
-
       // ── Cost Controls ────────────────────────────────────
       {
         displayName: "Cost Controls",
@@ -453,6 +430,11 @@ export class AlterLab implements INodeType {
         type: "collection",
         placeholder: "Add Option",
         default: {},
+        displayOptions: {
+          show: {
+            resource: ["scrape"],
+          },
+        },
         options: [
           {
             displayName: "Max Spend",
@@ -520,60 +502,719 @@ export class AlterLab implements INodeType {
         ],
       },
 
-      // ── Batch Options ────────────────────────────────────
+      // ══════════════════════════════════════════════════════
+      //  SESSION RESOURCE
+      // ══════════════════════════════════════════════════════
+
+      // ── Session Operation ───────────────────────────────
       {
-        displayName: "Webhook URL",
-        name: "webhookUrl",
-        type: "string",
-        default: "",
-        placeholder: "https://your-server.com/webhook",
-        description:
-          "Optional URL to receive a webhook notification when the batch completes",
+        displayName: "Operation",
+        name: "sessionOperation",
+        type: "options",
+        noDataExpression: true,
+        default: "list",
         displayOptions: {
           show: {
-            operation: ["batchScrape"],
+            resource: ["session"],
+          },
+        },
+        options: [
+          {
+            name: "Create",
+            value: "create",
+            description: "Create a new stored session",
+            action: "Create a session",
+          },
+          {
+            name: "Delete",
+            value: "delete",
+            description: "Delete a stored session",
+            action: "Delete a session",
+          },
+          {
+            name: "Get",
+            value: "get",
+            description: "Get a stored session by ID",
+            action: "Get a session",
+          },
+          {
+            name: "List",
+            value: "list",
+            description: "List all stored sessions",
+            action: "List sessions",
+          },
+          {
+            name: "Refresh",
+            value: "refresh",
+            description: "Refresh (rotate) cookies for a session",
+            action: "Refresh a session",
+          },
+          {
+            name: "Update",
+            value: "update",
+            description: "Update a stored session",
+            action: "Update a session",
+          },
+          {
+            name: "Validate",
+            value: "validate",
+            description: "Validate whether a session is still active",
+            action: "Validate a session",
+          },
+        ],
+        description: "The session operation to perform",
+      },
+
+      // ── Session ID (for get/update/delete/validate/refresh) ──
+      {
+        displayName: "Session ID",
+        name: "sessionId",
+        type: "string",
+        default: "",
+        required: true,
+        placeholder: "e.g. a1b2c3d4-e5f6-...",
+        description: "The UUID of the session",
+        displayOptions: {
+          show: {
+            resource: ["session"],
+            sessionOperation: [
+              "get",
+              "update",
+              "delete",
+              "validate",
+              "refresh",
+            ],
+          },
+        },
+      },
+
+      // ── Session Name (create) ────────────────────────────
+      {
+        displayName: "Name",
+        name: "sessionName",
+        type: "string",
+        default: "",
+        required: true,
+        placeholder: "e.g. My Amazon Session",
+        description: "A label for this session",
+        displayOptions: {
+          show: {
+            resource: ["session"],
+            sessionOperation: ["create"],
+          },
+        },
+      },
+
+      // ── Session Domain (create) ──────────────────────────
+      {
+        displayName: "Domain",
+        name: "sessionDomain",
+        type: "string",
+        default: "",
+        required: true,
+        placeholder: "e.g. amazon.com",
+        description: "Target domain for this session",
+        displayOptions: {
+          show: {
+            resource: ["session"],
+            sessionOperation: ["create"],
+          },
+        },
+      },
+
+      // ── Session Cookies (create) ─────────────────────────
+      {
+        displayName: "Cookies (JSON)",
+        name: "sessionCookies",
+        type: "json",
+        default: "",
+        required: true,
+        placeholder: '{"session-id": "abc123", "token": "xyz"}',
+        description:
+          'Cookie name-value pairs as JSON object, e.g. {"session-id": "abc123"}',
+        displayOptions: {
+          show: {
+            resource: ["session"],
+            sessionOperation: ["create"],
+          },
+        },
+      },
+
+      // ── Session Additional Fields (create) ───────────────
+      {
+        displayName: "Additional Fields",
+        name: "sessionCreateFields",
+        type: "collection",
+        placeholder: "Add Field",
+        default: {},
+        displayOptions: {
+          show: {
+            resource: ["session"],
+            sessionOperation: ["create"],
+          },
+        },
+        options: [
+          {
+            displayName: "Headers (JSON)",
+            name: "headers",
+            type: "json",
+            default: "",
+            placeholder: '{"Authorization": "Bearer ..."}',
+            description: "Custom headers as JSON object",
+          },
+          {
+            displayName: "Notes",
+            name: "notes",
+            type: "string",
+            default: "",
+            description: "Optional notes about this session",
+          },
+          {
+            displayName: "Expiration",
+            name: "expiresAt",
+            type: "dateTime",
+            default: "",
+            description: "When the session should expire",
+          },
+        ],
+      },
+
+      // ── Session Update Fields ────────────────────────────
+      {
+        displayName: "Update Fields",
+        name: "sessionUpdateFields",
+        type: "collection",
+        placeholder: "Add Field",
+        default: {},
+        displayOptions: {
+          show: {
+            resource: ["session"],
+            sessionOperation: ["update"],
+          },
+        },
+        options: [
+          {
+            displayName: "Name",
+            name: "name",
+            type: "string",
+            default: "",
+            description: "New name for the session",
+          },
+          {
+            displayName: "Cookies (JSON)",
+            name: "cookies",
+            type: "json",
+            default: "",
+            placeholder: '{"session-id": "new-value"}',
+            description: "Updated cookie name-value pairs as JSON object",
+          },
+          {
+            displayName: "Headers (JSON)",
+            name: "headers",
+            type: "json",
+            default: "",
+            placeholder: '{"Authorization": "Bearer ..."}',
+            description: "Updated custom headers as JSON object",
+          },
+          {
+            displayName: "Notes",
+            name: "notes",
+            type: "string",
+            default: "",
+            description: "Updated notes",
+          },
+          {
+            displayName: "Expiration",
+            name: "expiresAt",
+            type: "dateTime",
+            default: "",
+            description: "Updated expiration date",
+          },
+        ],
+      },
+
+      // ── Session Refresh Fields ───────────────────────────
+      {
+        displayName: "Cookies (JSON)",
+        name: "refreshCookies",
+        type: "json",
+        default: "",
+        placeholder: '{"session-id": "new-value"}',
+        description:
+          "New cookie name-value pairs to rotate in. If omitted, only headers are refreshed.",
+        displayOptions: {
+          show: {
+            resource: ["session"],
+            sessionOperation: ["refresh"],
           },
         },
       },
       {
-        displayName: "Polling Timeout (Seconds)",
-        name: "batchPollingTimeout",
-        type: "number",
-        default: 300,
-        typeOptions: { minValue: 30, maxValue: 900 },
-        description:
-          "Maximum time to wait for the batch to complete (30-900 seconds)",
+        displayName: "Headers (JSON)",
+        name: "refreshHeaders",
+        type: "json",
+        default: "",
+        placeholder: '{"Authorization": "Bearer ..."}',
+        description: "Updated custom headers for this session",
         displayOptions: {
           show: {
-            operation: ["batchScrape"],
+            resource: ["session"],
+            sessionOperation: ["refresh"],
           },
         },
+      },
+
+      // ── Session List Filters ─────────────────────────────
+      {
+        displayName: "Filters",
+        name: "sessionListFilters",
+        type: "collection",
+        placeholder: "Add Filter",
+        default: {},
+        displayOptions: {
+          show: {
+            resource: ["session"],
+            sessionOperation: ["list"],
+          },
+        },
+        options: [
+          {
+            displayName: "Domain",
+            name: "domain",
+            type: "string",
+            default: "",
+            placeholder: "e.g. amazon.com",
+            description: "Filter sessions by domain",
+          },
+          {
+            displayName: "Status",
+            name: "status",
+            type: "options",
+            default: "",
+            options: [
+              { name: "All", value: "" },
+              { name: "Active", value: "active" },
+              { name: "Expired", value: "expired" },
+              { name: "Invalid", value: "invalid" },
+            ],
+            description: "Filter sessions by status",
+          },
+        ],
       },
     ],
   };
 
   async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
     const items = this.getInputData();
-    const operation = this.getNodeParameter("operation", 0) as string;
-
-    // Detect credential type once for all items
-    let authName = "alterLabApi";
-    try {
-      await this.getCredentials("alterLabOAuth2Api");
-      authName = "alterLabOAuth2Api";
-    } catch {
-      // OAuth2 not configured, fall back to API key
-    }
-
-    // ── Batch Scrape operation ──────────────────────────
-    if (operation === "batchScrape") {
-      return executeBatchScrape(this, items, authName);
-    }
-
     const results: INodeExecutionData[] = [];
 
     for (let i = 0; i < items.length; i++) {
       try {
+        const resource = this.getNodeParameter("resource", i) as string;
+
+        // ── Detect credential type ────────────────────────
+        let authName = "alterLabApi";
+        try {
+          await this.getCredentials("alterLabOAuth2Api");
+          authName = "alterLabOAuth2Api";
+        } catch {
+          // OAuth2 not configured, fall back to API key
+        }
+
+        // ══════════════════════════════════════════════════
+        //  SESSION RESOURCE
+        // ══════════════════════════════════════════════════
+        if (resource === "session") {
+          const sessionOp = this.getNodeParameter(
+            "sessionOperation",
+            i,
+          ) as string;
+
+          if (sessionOp === "create") {
+            const name = this.getNodeParameter("sessionName", i) as string;
+            const domain = this.getNodeParameter("sessionDomain", i) as string;
+            const cookiesRaw = this.getNodeParameter(
+              "sessionCookies",
+              i,
+            ) as string;
+            const extra = this.getNodeParameter(
+              "sessionCreateFields",
+              i,
+              {},
+            ) as {
+              headers?: string;
+              notes?: string;
+              expiresAt?: string;
+            };
+
+            let cookies: Record<string, string>;
+            try {
+              cookies =
+                typeof cookiesRaw === "string"
+                  ? JSON.parse(cookiesRaw)
+                  : cookiesRaw;
+            } catch {
+              throw new NodeOperationError(
+                this.getNode(),
+                "Invalid JSON in Cookies field",
+                { itemIndex: i },
+              );
+            }
+
+            const body: Record<string, unknown> = {
+              name,
+              domain,
+              cookies,
+              consent: true,
+            };
+            if (extra.headers) {
+              try {
+                body.headers =
+                  typeof extra.headers === "string"
+                    ? JSON.parse(extra.headers)
+                    : extra.headers;
+              } catch {
+                throw new NodeOperationError(
+                  this.getNode(),
+                  "Invalid JSON in Headers field",
+                  { itemIndex: i },
+                );
+              }
+            }
+            if (extra.notes) body.notes = extra.notes;
+            if (extra.expiresAt) body.expires_at = extra.expiresAt;
+
+            const response =
+              await this.helpers.httpRequestWithAuthentication.call(
+                this,
+                authName,
+                {
+                  method: "POST",
+                  url: "/api/v1/sessions",
+                  body,
+                  json: true,
+                  returnFullResponse: true,
+                  ignoreHttpStatusErrors: true,
+                },
+              );
+
+            const statusCode = (response as { statusCode: number }).statusCode;
+            const responseBody = (response as { body: Record<string, unknown> })
+              .body;
+
+            if (statusCode >= 400) {
+              handleApiError(this, statusCode, responseBody as JsonObject, i);
+            }
+
+            results.push({ json: formatSessionResponse(responseBody) });
+            continue;
+          }
+
+          if (sessionOp === "list") {
+            const filters = this.getNodeParameter(
+              "sessionListFilters",
+              i,
+              {},
+            ) as {
+              domain?: string;
+              status?: string;
+            };
+
+            const qs: Record<string, string> = {};
+            if (filters.domain) qs.domain = filters.domain;
+            if (filters.status) qs.status = filters.status;
+
+            const response =
+              await this.helpers.httpRequestWithAuthentication.call(
+                this,
+                authName,
+                {
+                  method: "GET",
+                  url: "/api/v1/sessions",
+                  qs,
+                  json: true,
+                  returnFullResponse: true,
+                  ignoreHttpStatusErrors: true,
+                },
+              );
+
+            const statusCode = (response as { statusCode: number }).statusCode;
+            const responseBody = (response as { body: Record<string, unknown> })
+              .body;
+
+            if (statusCode >= 400) {
+              handleApiError(this, statusCode, responseBody as JsonObject, i);
+            }
+
+            const data = responseBody as {
+              sessions: Record<string, unknown>[];
+              total: number;
+            };
+
+            if (data.sessions?.length) {
+              for (const session of data.sessions) {
+                results.push({ json: formatSessionResponse(session) });
+              }
+            } else {
+              results.push({
+                json: { sessions: [], total: 0 },
+              });
+            }
+            continue;
+          }
+
+          if (sessionOp === "get") {
+            const sessionId = this.getNodeParameter("sessionId", i) as string;
+
+            const response =
+              await this.helpers.httpRequestWithAuthentication.call(
+                this,
+                authName,
+                {
+                  method: "GET",
+                  url: `/api/v1/sessions/${sessionId}`,
+                  json: true,
+                  returnFullResponse: true,
+                  ignoreHttpStatusErrors: true,
+                },
+              );
+
+            const statusCode = (response as { statusCode: number }).statusCode;
+            const responseBody = (response as { body: Record<string, unknown> })
+              .body;
+
+            if (statusCode >= 400) {
+              handleApiError(this, statusCode, responseBody as JsonObject, i);
+            }
+
+            results.push({ json: formatSessionResponse(responseBody) });
+            continue;
+          }
+
+          if (sessionOp === "update") {
+            const sessionId = this.getNodeParameter("sessionId", i) as string;
+            const fields = this.getNodeParameter(
+              "sessionUpdateFields",
+              i,
+              {},
+            ) as {
+              name?: string;
+              cookies?: string;
+              headers?: string;
+              notes?: string;
+              expiresAt?: string;
+            };
+
+            const body: Record<string, unknown> = {};
+            if (fields.name) body.name = fields.name;
+            if (fields.notes) body.notes = fields.notes;
+            if (fields.expiresAt) body.expires_at = fields.expiresAt;
+            if (fields.cookies) {
+              try {
+                body.cookies =
+                  typeof fields.cookies === "string"
+                    ? JSON.parse(fields.cookies)
+                    : fields.cookies;
+              } catch {
+                throw new NodeOperationError(
+                  this.getNode(),
+                  "Invalid JSON in Cookies field",
+                  { itemIndex: i },
+                );
+              }
+            }
+            if (fields.headers) {
+              try {
+                body.headers =
+                  typeof fields.headers === "string"
+                    ? JSON.parse(fields.headers)
+                    : fields.headers;
+              } catch {
+                throw new NodeOperationError(
+                  this.getNode(),
+                  "Invalid JSON in Headers field",
+                  { itemIndex: i },
+                );
+              }
+            }
+
+            const response =
+              await this.helpers.httpRequestWithAuthentication.call(
+                this,
+                authName,
+                {
+                  method: "PATCH",
+                  url: `/api/v1/sessions/${sessionId}`,
+                  body,
+                  json: true,
+                  returnFullResponse: true,
+                  ignoreHttpStatusErrors: true,
+                },
+              );
+
+            const statusCode = (response as { statusCode: number }).statusCode;
+            const responseBody = (response as { body: Record<string, unknown> })
+              .body;
+
+            if (statusCode >= 400) {
+              handleApiError(this, statusCode, responseBody as JsonObject, i);
+            }
+
+            results.push({ json: formatSessionResponse(responseBody) });
+            continue;
+          }
+
+          if (sessionOp === "delete") {
+            const sessionId = this.getNodeParameter("sessionId", i) as string;
+
+            const response =
+              await this.helpers.httpRequestWithAuthentication.call(
+                this,
+                authName,
+                {
+                  method: "DELETE",
+                  url: `/api/v1/sessions/${sessionId}`,
+                  json: true,
+                  returnFullResponse: true,
+                  ignoreHttpStatusErrors: true,
+                },
+              );
+
+            const statusCode = (response as { statusCode: number }).statusCode;
+
+            if (statusCode >= 400) {
+              const responseBody = (
+                response as { body: Record<string, unknown> }
+              ).body;
+              handleApiError(this, statusCode, responseBody as JsonObject, i);
+            }
+
+            results.push({
+              json: { sessionId, deleted: true },
+            });
+            continue;
+          }
+
+          if (sessionOp === "validate") {
+            const sessionId = this.getNodeParameter("sessionId", i) as string;
+
+            const response =
+              await this.helpers.httpRequestWithAuthentication.call(
+                this,
+                authName,
+                {
+                  method: "POST",
+                  url: `/api/v1/sessions/${sessionId}/validate`,
+                  json: true,
+                  returnFullResponse: true,
+                  ignoreHttpStatusErrors: true,
+                },
+              );
+
+            const statusCode = (response as { statusCode: number }).statusCode;
+            const responseBody = (response as { body: Record<string, unknown> })
+              .body;
+
+            if (statusCode >= 400) {
+              handleApiError(this, statusCode, responseBody as JsonObject, i);
+            }
+
+            const data = responseBody as Record<string, unknown>;
+            results.push({
+              json: {
+                sessionId,
+                isValid: data.is_valid ?? false,
+                confidence: data.confidence ?? 0,
+                httpStatus: data.http_status ?? null,
+                detectedUser: data.detected_user ?? null,
+                cookiesExpiringSoon: data.cookies_expiring_soon ?? false,
+                consecutiveFailures: data.consecutive_failures ?? 0,
+                details: data.details ?? "",
+              },
+            });
+            continue;
+          }
+
+          if (sessionOp === "refresh") {
+            const sessionId = this.getNodeParameter("sessionId", i) as string;
+            const cookiesRaw = this.getNodeParameter(
+              "refreshCookies",
+              i,
+              "",
+            ) as string;
+            const headersRaw = this.getNodeParameter(
+              "refreshHeaders",
+              i,
+              "",
+            ) as string;
+
+            const body: Record<string, unknown> = {};
+            if (cookiesRaw) {
+              try {
+                body.cookies =
+                  typeof cookiesRaw === "string"
+                    ? JSON.parse(cookiesRaw)
+                    : cookiesRaw;
+              } catch {
+                throw new NodeOperationError(
+                  this.getNode(),
+                  "Invalid JSON in Cookies field",
+                  { itemIndex: i },
+                );
+              }
+            }
+            if (headersRaw) {
+              try {
+                body.headers =
+                  typeof headersRaw === "string"
+                    ? JSON.parse(headersRaw)
+                    : headersRaw;
+              } catch {
+                throw new NodeOperationError(
+                  this.getNode(),
+                  "Invalid JSON in Headers field",
+                  { itemIndex: i },
+                );
+              }
+            }
+
+            const response =
+              await this.helpers.httpRequestWithAuthentication.call(
+                this,
+                authName,
+                {
+                  method: "POST",
+                  url: `/api/v1/sessions/${sessionId}/refresh`,
+                  body,
+                  json: true,
+                  returnFullResponse: true,
+                  ignoreHttpStatusErrors: true,
+                },
+              );
+
+            const statusCode = (response as { statusCode: number }).statusCode;
+            const responseBody = (response as { body: Record<string, unknown> })
+              .body;
+
+            if (statusCode >= 400) {
+              handleApiError(this, statusCode, responseBody as JsonObject, i);
+            }
+
+            results.push({ json: formatSessionResponse(responseBody) });
+            continue;
+          }
+
+          throw new NodeOperationError(
+            this.getNode(),
+            `Unknown session operation: ${sessionOp}`,
+            { itemIndex: i },
+          );
+        }
+
+        // ══════════════════════════════════════════════════
+        //  SCRAPE RESOURCE
+        // ══════════════════════════════════════════════════
+        const operation = this.getNodeParameter("operation", i) as string;
         const url = this.getNodeParameter("url", i) as string;
         const mode = this.getNodeParameter("mode", i) as string;
 
@@ -629,7 +1270,7 @@ export class AlterLab implements INodeType {
               authName,
               {
                 method: "POST",
-                url: `${BASE_URL}/api/v1/scrape/estimate`,
+                url: "/api/v1/scrape/estimate",
                 body,
                 json: true,
                 returnFullResponse: true,
@@ -682,6 +1323,7 @@ export class AlterLab implements INodeType {
           proxyCountry?: string;
           waitCondition?: string;
           removeCookieBanners?: boolean;
+          sessionId?: string;
         };
         const extraction = this.getNodeParameter("extraction", i, {}) as {
           extractionProfile?: string;
@@ -744,6 +1386,9 @@ export class AlterLab implements INodeType {
         if (advancedOptions.removeCookieBanners === false) {
           advanced.remove_cookie_banners = false;
         }
+        if (advancedOptions.sessionId) {
+          advanced.session_id = advancedOptions.sessionId;
+        }
         if (Object.keys(advanced).length > 0) {
           body.advanced = advanced;
         }
@@ -797,48 +1442,13 @@ export class AlterLab implements INodeType {
           body.cost_controls = costCtrl;
         }
 
-        // Session / authenticated scraping → injected into "advanced"
-        const session = this.getNodeParameter("session", i, {}) as {
-          useSession?: boolean;
-          sessionId?: string;
-          cookies?: string;
-        };
-        if (session.useSession) {
-          // Ensure advanced object exists in body
-          if (!body.advanced) {
-            body.advanced = advanced;
-          }
-          const adv = body.advanced as Record<string, unknown>;
-          if (session.sessionId) {
-            adv.session_id = session.sessionId;
-          }
-          if (session.cookies) {
-            try {
-              adv.cookies =
-                typeof session.cookies === "string"
-                  ? JSON.parse(session.cookies)
-                  : session.cookies;
-            } catch {
-              throw new NodeOperationError(
-                this.getNode(),
-                "Invalid JSON in Inline Cookies",
-                { itemIndex: i },
-              );
-            }
-          }
-          // Re-assign in case advanced was empty before
-          if (Object.keys(adv).length > 0) {
-            body.advanced = adv;
-          }
-        }
-
         // ── Make the API call ─────────────────────────────
         let response = await this.helpers.httpRequestWithAuthentication.call(
           this,
           authName,
           {
             method: "POST",
-            url: `${BASE_URL}/api/v1/scrape`,
+            url: "/api/v1/scrape",
             body,
             json: true,
             returnFullResponse: true,
@@ -858,7 +1468,7 @@ export class AlterLab implements INodeType {
           const pollStart = Date.now();
 
           while (Date.now() - pollStart < maxPollTime) {
-            await sleep(delay);
+            await new Promise<void>((resolve) => setTimeout(resolve, delay));
             delay = Math.min(delay * 2, maxDelay);
 
             const pollResponse =
@@ -867,7 +1477,7 @@ export class AlterLab implements INodeType {
                 authName,
                 {
                   method: "GET",
-                  url: `${BASE_URL}/api/v1/jobs/${jobId}`,
+                  url: `/api/v1/jobs/${jobId}`,
                   json: true,
                   returnFullResponse: true,
                   ignoreHttpStatusErrors: true,
@@ -932,9 +1542,7 @@ export class AlterLab implements INodeType {
             (content as Record<string, unknown>).markdown ?? null;
           output.text = (content as Record<string, unknown>).text ?? null;
           output.json = (content as Record<string, unknown>).json ?? null;
-          output.jsonV2 = (content as Record<string, unknown>).json_v2 ?? null;
           output.html = (content as Record<string, unknown>).html ?? null;
-          output.rag = (content as Record<string, unknown>).rag ?? null;
         } else {
           output.markdown = content ?? null;
         }
@@ -975,350 +1583,28 @@ export class AlterLab implements INodeType {
   }
 }
 
-/**
- * Format a single scrape result into n8n output format.
- */
-function formatScrapeResult(data: Record<string, unknown>): IDataObject {
-  const content = data.content as Record<string, unknown> | string | undefined;
-
-  const output: IDataObject = {
-    url: (data.url as string) ?? "",
-    statusCode: (data.status_code as number) ?? 0,
-    title: (data.title as string) ?? null,
-    author: (data.author as string) ?? null,
-    publishedAt: (data.published_at as string) ?? null,
-    cached: (data.cached as boolean) ?? false,
-    responseTimeMs: (data.response_time_ms as number) ?? 0,
-    sizeBytes: (data.size_bytes as number) ?? 0,
+/** Map snake_case API response to camelCase n8n output */
+function formatSessionResponse(data: Record<string, unknown>): IDataObject {
+  return {
+    id: data.id ?? null,
+    name: data.name ?? null,
+    domain: data.domain ?? null,
+    cookieNames: data.cookie_names ?? [],
+    headerNames: data.header_names ?? null,
+    status: data.status ?? null,
+    expiresAt: data.expires_at ?? null,
+    lastValidatedAt: data.last_validated_at ?? null,
+    validationConfidence: data.validation_confidence ?? null,
+    consecutiveFailures: data.consecutive_failures ?? 0,
+    lastUsedAt: data.last_used_at ?? null,
+    totalRequests: data.total_requests ?? 0,
+    successfulRequests: data.successful_requests ?? 0,
+    successRate: data.success_rate ?? 0,
+    notes: data.notes ?? null,
+    expiryStatus: data.expiry_status ?? null,
+    createdAt: data.created_at ?? null,
+    updatedAt: data.updated_at ?? null,
   };
-
-  if (content && typeof content === "object") {
-    output.markdown = (content as Record<string, unknown>).markdown ?? null;
-    output.text = (content as Record<string, unknown>).text ?? null;
-    output.json = (content as Record<string, unknown>).json ?? null;
-    output.jsonV2 = (content as Record<string, unknown>).json_v2 ?? null;
-    output.html = (content as Record<string, unknown>).html ?? null;
-    output.rag = (content as Record<string, unknown>).rag ?? null;
-  } else {
-    output.markdown = content ?? null;
-  }
-
-  output.filteredContent = data.filtered_content ?? null;
-  output.extractionMethod = data.extraction_method ?? null;
-  output.screenshotUrl = data.screenshot_url ?? null;
-  output.pdfUrl = data.pdf_url ?? null;
-  output.ocrResults = data.ocr_results ?? null;
-  output.rawHtml = data.raw_html ?? null;
-
-  const billing = data.billing as Record<string, unknown> | undefined;
-  output.billing = {
-    cost: billing?.total_credits ?? data.credits_used ?? 0,
-    tier: billing?.tier_used ?? data.tier_used ?? "unknown",
-    savings: billing?.savings ?? 0,
-    suggestion: billing?.optimization_suggestion ?? null,
-  };
-
-  return output;
-}
-
-/**
- * Build a per-URL request body for the batch API from node parameters.
- */
-function buildBatchItemBody(
-  ctx: IExecuteFunctions,
-  itemIndex: number,
-): Record<string, unknown> {
-  const url = ctx.getNodeParameter("url", itemIndex) as string;
-  const mode = ctx.getNodeParameter("mode", itemIndex) as string;
-  const outputOptions = ctx.getNodeParameter(
-    "outputOptions",
-    itemIndex,
-    {},
-  ) as {
-    formats?: string[];
-    includeRawHtml?: boolean;
-    timeout?: number;
-  };
-  const executionMode = ctx.getNodeParameter(
-    "executionMode",
-    itemIndex,
-    {},
-  ) as {
-    cache?: boolean;
-  };
-  const advancedOptions = ctx.getNodeParameter(
-    "advancedOptions",
-    itemIndex,
-    {},
-  ) as {
-    renderJs?: boolean;
-    screenshot?: boolean;
-    generatePdf?: boolean;
-    ocr?: boolean;
-    useProxy?: boolean;
-    proxyCountry?: string;
-    waitCondition?: string;
-    removeCookieBanners?: boolean;
-  };
-  const extraction = ctx.getNodeParameter("extraction", itemIndex, {}) as {
-    extractionProfile?: string;
-    extractionPrompt?: string;
-    extractionSchema?: string;
-  };
-  const costControls = ctx.getNodeParameter("costControls", itemIndex, {}) as {
-    maxCredits?: number;
-    forceTier?: string;
-    maxTier?: string;
-    preferCost?: boolean;
-    preferSpeed?: boolean;
-    failFast?: boolean;
-  };
-
-  const body: Record<string, unknown> = { url, mode };
-
-  if (outputOptions.formats?.length) {
-    body.formats = outputOptions.formats;
-  }
-  if (outputOptions.includeRawHtml) {
-    body.include_raw_html = true;
-  }
-  if (outputOptions.timeout && outputOptions.timeout !== 90) {
-    body.timeout = outputOptions.timeout;
-  }
-  if (executionMode.cache) {
-    body.cache = true;
-  }
-
-  const advanced: Record<string, unknown> = {};
-  if (advancedOptions.renderJs) advanced.render_js = true;
-  if (advancedOptions.screenshot) advanced.screenshot = true;
-  if (advancedOptions.generatePdf) advanced.generate_pdf = true;
-  if (advancedOptions.ocr) advanced.ocr = true;
-  if (advancedOptions.useProxy) advanced.use_proxy = true;
-  if (advancedOptions.proxyCountry) {
-    advanced.proxy_country = advancedOptions.proxyCountry;
-  }
-  if (
-    advancedOptions.waitCondition &&
-    advancedOptions.waitCondition !== "networkidle"
-  ) {
-    advanced.wait_condition = advancedOptions.waitCondition;
-  }
-  if (advancedOptions.removeCookieBanners === false) {
-    advanced.remove_cookie_banners = false;
-  }
-  if (Object.keys(advanced).length > 0) {
-    body.advanced = advanced;
-  }
-
-  if (extraction.extractionProfile && extraction.extractionProfile !== "auto") {
-    body.extraction_profile = extraction.extractionProfile;
-  }
-  if (extraction.extractionPrompt) {
-    body.extraction_prompt = extraction.extractionPrompt;
-  }
-  if (extraction.extractionSchema) {
-    try {
-      body.extraction_schema =
-        typeof extraction.extractionSchema === "string"
-          ? JSON.parse(extraction.extractionSchema)
-          : extraction.extractionSchema;
-    } catch {
-      throw new NodeOperationError(
-        ctx.getNode(),
-        "Invalid JSON in Extraction Schema",
-        { itemIndex },
-      );
-    }
-  }
-
-  const costCtrl: Record<string, unknown> = {};
-  if (costControls.maxCredits && costControls.maxCredits > 0) {
-    costCtrl.max_credits = costControls.maxCredits;
-  }
-  if (costControls.forceTier) costCtrl.force_tier = costControls.forceTier;
-  if (costControls.maxTier) costCtrl.max_tier = costControls.maxTier;
-  if (costControls.preferCost) costCtrl.prefer_cost = true;
-  if (costControls.preferSpeed) costCtrl.prefer_speed = true;
-  if (costControls.failFast) costCtrl.fail_fast = true;
-  if (Object.keys(costCtrl).length > 0) {
-    body.cost_controls = costCtrl;
-  }
-
-  // Session / authenticated scraping → injected into "advanced"
-  const session = ctx.getNodeParameter("session", itemIndex, {}) as {
-    useSession?: boolean;
-    sessionId?: string;
-    cookies?: string;
-  };
-  if (session.useSession) {
-    if (!body.advanced) {
-      body.advanced = advanced;
-    }
-    const adv = body.advanced as Record<string, unknown>;
-    if (session.sessionId) {
-      adv.session_id = session.sessionId;
-    }
-    if (session.cookies) {
-      try {
-        adv.cookies =
-          typeof session.cookies === "string"
-            ? JSON.parse(session.cookies)
-            : session.cookies;
-      } catch {
-        throw new NodeOperationError(
-          ctx.getNode(),
-          "Invalid JSON in Inline Cookies",
-          { itemIndex },
-        );
-      }
-    }
-    if (Object.keys(adv).length > 0) {
-      body.advanced = adv;
-    }
-  }
-
-  return body;
-}
-
-/**
- * Execute batch scrape: collect all input items into one batch API call,
- * poll for completion, and return one output item per URL result.
- */
-async function executeBatchScrape(
-  ctx: IExecuteFunctions,
-  items: INodeExecutionData[],
-  authName: string,
-): Promise<INodeExecutionData[][]> {
-  if (items.length > 100) {
-    throw new NodeOperationError(
-      ctx.getNode(),
-      `Batch scrape supports up to 100 URLs, but ${items.length} items were provided. Split your data into smaller batches upstream.`,
-    );
-  }
-
-  // Build batch request body from all input items
-  const batchUrls: Record<string, unknown>[] = [];
-  for (let i = 0; i < items.length; i++) {
-    batchUrls.push(buildBatchItemBody(ctx, i));
-  }
-
-  const body: Record<string, unknown> = { urls: batchUrls };
-
-  const webhookUrl = ctx.getNodeParameter("webhookUrl", 0, "") as string;
-  if (webhookUrl) {
-    body.webhook_url = webhookUrl;
-  }
-
-  // Submit batch
-  const response = await ctx.helpers.httpRequestWithAuthentication.call(
-    ctx,
-    authName,
-    {
-      method: "POST",
-      url: "/api/v1/batch",
-      body,
-      json: true,
-      returnFullResponse: true,
-      ignoreHttpStatusErrors: true,
-    },
-  );
-
-  const statusCode = (response as { statusCode: number }).statusCode;
-  const responseBody = (response as { body: Record<string, unknown> }).body;
-
-  if (statusCode >= 400) {
-    handleApiError(ctx, statusCode, responseBody as JsonObject, 0);
-  }
-
-  const batchId = responseBody.batch_id as string;
-
-  // Poll for completion with exponential backoff
-  const pollingTimeout = ctx.getNodeParameter(
-    "batchPollingTimeout",
-    0,
-    300,
-  ) as number;
-  const maxPollTime = pollingTimeout * 1000;
-  let delay = 1000;
-  const maxDelay = 5000;
-  const pollStart = Date.now();
-  let batchResult: Record<string, unknown> | undefined;
-
-  while (Date.now() - pollStart < maxPollTime) {
-    await new Promise<void>((resolve) => setTimeout(resolve, delay));
-    delay = Math.min(delay * 2, maxDelay);
-
-    const pollResponse = await ctx.helpers.httpRequestWithAuthentication.call(
-      ctx,
-      authName,
-      {
-        method: "GET",
-        url: `/api/v1/batch/${batchId}`,
-        json: true,
-        returnFullResponse: true,
-        ignoreHttpStatusErrors: true,
-      },
-    );
-
-    const pollStatusCode = (pollResponse as { statusCode: number }).statusCode;
-    const pollBody = (pollResponse as { body: Record<string, unknown> }).body;
-
-    if (pollStatusCode >= 400) {
-      handleApiError(ctx, pollStatusCode, pollBody as JsonObject, 0);
-    }
-
-    const status = pollBody.status as string;
-    if (status === "completed" || status === "partial" || status === "failed") {
-      batchResult = pollBody;
-      break;
-    }
-  }
-
-  if (!batchResult) {
-    throw new NodeOperationError(
-      ctx.getNode(),
-      `Batch ${batchId} timed out after ${pollingTimeout}s. Use a webhook URL to receive results asynchronously, or increase the polling timeout.`,
-    );
-  }
-
-  // Map results to output items
-  const batchItems = (batchResult.items as Record<string, unknown>[]) ?? [];
-  const results: INodeExecutionData[] = [];
-
-  for (const batchItem of batchItems) {
-    if (batchItem.status === "succeeded" && batchItem.result) {
-      const output = formatScrapeResult(
-        batchItem.result as Record<string, unknown>,
-      );
-      output.batchId = batchId;
-      output.jobId = (batchItem.job_id as string) ?? "";
-      results.push({ json: output });
-    } else {
-      results.push({
-        json: {
-          url: (batchItem.url as string) ?? "",
-          jobId: (batchItem.job_id as string) ?? "",
-          batchId,
-          status: (batchItem.status as string) ?? "unknown",
-          error: (batchItem.error as string) ?? "Scrape failed",
-        },
-      });
-    }
-  }
-
-  // Add batch summary to first result
-  if (results.length > 0) {
-    (results[0].json as IDataObject).batchSummary = {
-      batchId,
-      total: batchResult.total,
-      completed: batchResult.completed,
-      failed: batchResult.failed,
-      status: batchResult.status,
-    };
-  }
-
-  return [results];
 }
 
 function handleApiError(
