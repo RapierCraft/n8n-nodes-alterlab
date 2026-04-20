@@ -250,7 +250,7 @@ export class AlterLab implements INodeType {
             type: "boolean",
             default: false,
             description:
-              "Whether to render JavaScript with a headless browser (+$0.0006)",
+              "Whether to render JavaScript with a headless browser (forces Tier 4 minimum — no separate add-on charge)",
           },
           {
             displayName: "Screenshot",
