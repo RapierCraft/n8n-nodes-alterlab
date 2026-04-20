@@ -219,7 +219,7 @@ export class AlterLab implements INodeType {
             displayName: "Cache TTL (Seconds)",
             name: "cacheTtl",
             type: "number",
-            default: 900,
+            default: 3600,
             typeOptions: { minValue: 60, maxValue: 86400 },
             description: "Cache time-to-live in seconds (60-86400)",
             displayOptions: {
@@ -1362,7 +1362,7 @@ export class AlterLab implements INodeType {
         // Execution mode
         if (executionMode.cache) {
           body.cache = true;
-          if (executionMode.cacheTtl && executionMode.cacheTtl !== 900) {
+          if (executionMode.cacheTtl && executionMode.cacheTtl !== 3600) {
             body.cache_ttl = executionMode.cacheTtl;
           }
         }
