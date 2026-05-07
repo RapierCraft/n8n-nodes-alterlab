@@ -280,6 +280,15 @@ export class AlterLab implements INodeType {
             typeOptions: { minValue: 1, maxValue: 300 },
             description: "Request timeout in seconds (1-300)",
           },
+          {
+            displayName: "Max Response Bytes",
+            name: "maxResponseBytes",
+            type: "number",
+            default: 5242880,
+            typeOptions: { minValue: 0, maxValue: 52428800 },
+            description:
+              "Soft cap on raw response body size in bytes. HTML exceeding this limit is truncated before extraction. Default: 5 MB (5242880). Set to 0 for no limit. Maximum: 50 MB (52428800).",
+          },
         ],
       },
 
@@ -2728,6 +2737,7 @@ export class AlterLab implements INodeType {
           formats?: string[];
           includeRawHtml?: boolean;
           timeout?: number;
+          maxResponseBytes?: number;
         };
         const executionMode = this.getNodeParameter("executionMode", i, {}) as {
           cache?: boolean;
@@ -2791,6 +2801,12 @@ export class AlterLab implements INodeType {
         }
         if (outputOptions.timeout && outputOptions.timeout !== 90) {
           body.timeout = outputOptions.timeout;
+        }
+        if (
+          outputOptions.maxResponseBytes !== undefined &&
+          outputOptions.maxResponseBytes !== 5242880
+        ) {
+          body.max_response_bytes = outputOptions.maxResponseBytes;
         }
 
         // Execution mode
