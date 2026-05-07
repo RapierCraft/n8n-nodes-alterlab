@@ -176,6 +176,65 @@ export class AlterLab implements INodeType {
         },
       },
 
+      // ── HTTP Method ──────────────────────────────────────
+      {
+        displayName: "HTTP Method",
+        name: "httpMethod",
+        type: "options",
+        default: "GET",
+        displayOptions: {
+          show: {
+            resource: ["scrape"],
+          },
+        },
+        options: [
+          {
+            name: "GET",
+            value: "GET",
+            description: "Standard page scraping (default)",
+          },
+          {
+            name: "POST",
+            value: "POST",
+            description: "Form submissions, REST APIs, GraphQL",
+          },
+          {
+            name: "PUT",
+            value: "PUT",
+            description: "Full resource replacement",
+          },
+          {
+            name: "PATCH",
+            value: "PATCH",
+            description: "Partial resource update",
+          },
+          {
+            name: "DELETE",
+            value: "DELETE",
+            description: "Resource deletion",
+          },
+        ],
+        description: "HTTP method for the target URL request",
+      },
+
+      // ── Request Body ─────────────────────────────────────
+      {
+        displayName: "Request Body",
+        name: "requestBody",
+        type: "string",
+        typeOptions: { rows: 4 },
+        default: "",
+        placeholder: '{"query": "{ user { id name } }"}',
+        displayOptions: {
+          show: {
+            resource: ["scrape"],
+            httpMethod: ["POST", "PUT", "PATCH"],
+          },
+        },
+        description:
+          "Request body as a string. For GraphQL: JSON with query + variables. For REST: JSON payload. For forms: URL-encoded string.",
+      },
+
       // ── Output Options ───────────────────────────────────
       {
         displayName: "Output Options",
@@ -2655,6 +2714,16 @@ export class AlterLab implements INodeType {
         }
 
         // ── Scrape operation ──────────────────────────────
+        const httpMethod = this.getNodeParameter(
+          "httpMethod",
+          i,
+          "GET",
+        ) as string;
+        const requestBody = this.getNodeParameter(
+          "requestBody",
+          i,
+          "",
+        ) as string;
         const outputOptions = this.getNodeParameter("outputOptions", i, {}) as {
           formats?: string[];
           includeRawHtml?: boolean;
@@ -2704,6 +2773,14 @@ export class AlterLab implements INodeType {
           mode,
           sync: true,
         };
+
+        // HTTP method and request body
+        if (httpMethod && httpMethod !== "GET") {
+          body.method = httpMethod;
+        }
+        if (requestBody && requestBody.trim()) {
+          body.body = requestBody;
+        }
 
         // Output options
         if (outputOptions.formats?.length) {
