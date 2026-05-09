@@ -255,6 +255,7 @@ export class AlterLab implements INodeType {
             type: "multiOptions",
             default: ["markdown", "json"],
             options: [
+              { name: "Content (AI/KB)", value: "content" },
               { name: "HTML", value: "html" },
               { name: "JSON", value: "json" },
               { name: "JSON V2 (Section Tree)", value: "json_v2" },
@@ -263,7 +264,7 @@ export class AlterLab implements INodeType {
               { name: "Text", value: "text" },
             ],
             description:
-              "Output formats for content transformation. json_v2 returns a structured section tree. rag returns chunked content for vector ingestion.",
+              "Output formats for content transformation. json_v2 returns a structured section tree. rag returns chunked content for vector ingestion. content returns body_markdown + content_hash for AI/KB pipelines.",
           },
           {
             displayName: "Include Raw HTML",
@@ -742,6 +743,7 @@ export class AlterLab implements INodeType {
             type: "multiOptions",
             default: ["markdown"],
             options: [
+              { name: "Content (AI/KB)", value: "content" },
               { name: "HTML", value: "html" },
               { name: "JSON", value: "json" },
               { name: "JSON V2 (Section Tree)", value: "json_v2" },
