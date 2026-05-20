@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.issue.author_association == 'MEMBER' || github.event.issue.author_association == 'OWNER' || github.event.issue.author_association == 'COLLABORATOR'
     steps:
-      - uses: actions/add-to-project@v1.0.2
+      - uses: actions/add-to-project@v2.0.0
         with:
           project-url: https://github.com/users/RapierCraft/projects/1
           github-token: ${{ secrets.ECOSYSTEM_PAT }}
