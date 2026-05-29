@@ -217,6 +217,44 @@ export class AlterLab implements INodeType {
         description: "HTTP method for the target URL request",
       },
 
+      // ── Content Type ─────────────────────────────────────
+      {
+        displayName: "Content Type",
+        name: "contentType",
+        type: "options",
+        default: "application/json",
+        displayOptions: {
+          show: {
+            resource: ["scrape"],
+            httpMethod: ["POST", "PUT", "PATCH"],
+          },
+        },
+        options: [
+          {
+            name: "JSON (application/json)",
+            value: "application/json",
+            description: "JSON payload (default for REST APIs and GraphQL)",
+          },
+          {
+            name: "Form URL-Encoded (application/x-www-form-urlencoded)",
+            value: "application/x-www-form-urlencoded",
+            description: "HTML form submission format",
+          },
+          {
+            name: "Plain Text (text/plain)",
+            value: "text/plain",
+            description: "Plain text body",
+          },
+          {
+            name: "GraphQL (application/graphql)",
+            value: "application/graphql",
+            description: "Raw GraphQL query string",
+          },
+        ],
+        description:
+          "Content-Type header for the request body. Defaults to application/json when body is provided.",
+      },
+
       // ── Request Body ─────────────────────────────────────
       {
         displayName: "Request Body",
@@ -233,6 +271,22 @@ export class AlterLab implements INodeType {
         },
         description:
           "Request body as a string. For GraphQL: JSON with query + variables. For REST: JSON payload. For forms: URL-encoded string.",
+      },
+
+      // ── Custom Headers ────────────────────────────────────
+      {
+        displayName: "Headers (JSON)",
+        name: "headers",
+        type: "json",
+        default: "",
+        placeholder: '{"Authorization": "Bearer token", "Accept-Language": "de"}',
+        displayOptions: {
+          show: {
+            resource: ["scrape"],
+          },
+        },
+        description:
+          "Custom HTTP headers to forward to the target URL as a JSON object. Hop-by-hop headers (Connection, Host, etc.) are not allowed. Maximum 50 headers.",
       },
 
       // ── Output Options ───────────────────────────────────
@@ -346,10 +400,29 @@ export class AlterLab implements INodeType {
           {
             displayName: "Render JavaScript",
             name: "renderJs",
-            type: "boolean",
-            default: false,
+            type: "options",
+            default: "false",
+            options: [
+              {
+                name: "No",
+                value: "false",
+                description: "Do not render JavaScript (fast HTTP only)",
+              },
+              {
+                name: "Yes",
+                value: "true",
+                description:
+                  "Always render with headless browser (forces Tier 4 minimum — no extra charge)",
+              },
+              {
+                name: "Auto",
+                value: "auto",
+                description:
+                  "Smart detection — only renders JS-heavy pages with browser, saves 30-60% on mixed sites",
+              },
+            ],
             description:
-              "Whether to render JavaScript with a headless browser (forces Tier 4 minimum — no separate add-on charge)",
+              "JavaScript rendering mode. Auto probes each page and only uses the browser when needed.",
           },
           {
             displayName: "Screenshot",
@@ -357,10 +430,10 @@ export class AlterLab implements INodeType {
             type: "boolean",
             default: false,
             description:
-              "Whether to capture a full-page screenshot (+$0.0002, requires Render JavaScript)",
+              "Whether to capture a full-page screenshot (+$0.0002, requires Render JavaScript = Yes)",
             displayOptions: {
               show: {
-                renderJs: [true],
+                renderJs: ["true"],
               },
             },
           },
@@ -370,10 +443,10 @@ export class AlterLab implements INodeType {
             type: "boolean",
             default: false,
             description:
-              "Whether to generate a PDF of the rendered page (+$0.0004, requires Render JavaScript)",
+              "Whether to generate a PDF of the rendered page (+$0.0004, requires Render JavaScript = Yes)",
             displayOptions: {
               show: {
-                renderJs: [true],
+                renderJs: ["true"],
               },
             },
           },
@@ -386,7 +459,47 @@ export class AlterLab implements INodeType {
               "Whether to scroll the page to trigger lazy-loaded content (requires Render JavaScript). Adds ~2-3s latency.",
             displayOptions: {
               show: {
-                renderJs: [true],
+                renderJs: ["true", "auto"],
+              },
+            },
+          },
+          {
+            displayName: "Scroll Count",
+            name: "scrollCount",
+            type: "number",
+            default: 3,
+            typeOptions: { minValue: 1, maxValue: 10 },
+            description:
+              "Number of scroll iterations when Scroll To Load is enabled (1-10, default 3)",
+            displayOptions: {
+              show: {
+                scrollToLoad: [true],
+              },
+            },
+          },
+          {
+            displayName: "Include Iframes",
+            name: "includeIframes",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to inline iframe content into the main document (requires Render JavaScript). Same-origin iframes are read directly; cross-origin iframes are marked but not fetched.",
+            displayOptions: {
+              show: {
+                renderJs: ["true", "auto"],
+              },
+            },
+          },
+          {
+            displayName: "Flatten Shadow DOM",
+            name: "flattenShadowDom",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to flatten Shadow DOM roots into regular DOM for extraction (requires Render JavaScript). Web Components with shadow roots become visible in the serialized HTML.",
+            displayOptions: {
+              show: {
+                renderJs: ["true", "auto"],
               },
             },
           },
@@ -444,9 +557,18 @@ export class AlterLab implements INodeType {
             description: "When to consider the page ready (JS rendering only)",
             displayOptions: {
               show: {
-                renderJs: [true],
+                renderJs: ["true", "auto"],
               },
             },
+          },
+          {
+            displayName: "Wait For (CSS Selector)",
+            name: "waitFor",
+            type: "string",
+            default: "",
+            placeholder: "#main-content, .product-grid",
+            description:
+              "CSS selector to wait for before considering the page ready. Distinct from Wait Condition (event-based) — this waits for a specific DOM element to appear.",
           },
           {
             displayName: "Remove Cookie Banners",
@@ -483,6 +605,57 @@ export class AlterLab implements INodeType {
             placeholder: "e.g. a1b2c3d4-e5f6-...",
             description:
               "Use a stored session for authenticated scraping (UUID from Sessions resource)",
+          },
+          {
+            displayName: "Session Headers (JSON)",
+            name: "sessionHeaders",
+            type: "json",
+            default: "",
+            placeholder: '{"Authorization": "Bearer token"}',
+            description:
+              "Inline auth headers merged with session headers. Use when you need to inject auth headers without a stored session.",
+          },
+          {
+            displayName: "Force Refresh",
+            name: "forceRefresh",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to force a fresh fetch even when caching is enabled, bypassing the cache for this request",
+          },
+        ],
+      },
+
+      // ── Location ─────────────────────────────────────────
+      {
+        displayName: "Location",
+        name: "location",
+        type: "collection",
+        placeholder: "Add Location",
+        default: {},
+        displayOptions: {
+          show: {
+            resource: ["scrape"],
+          },
+        },
+        options: [
+          {
+            displayName: "Country",
+            name: "country",
+            type: "string",
+            default: "",
+            placeholder: "DE",
+            description:
+              "ISO 3166-1 alpha-2 country code (e.g. DE, JP, BR). Routes request through a proxy in the specified country. Different from Proxy Country — this also sets browser locale.",
+          },
+          {
+            displayName: "Language",
+            name: "language",
+            type: "string",
+            default: "",
+            placeholder: "de",
+            description:
+              "ISO 639-1 language code (e.g. de, ja, pt-BR). Sets the Accept-Language header and browser locale for localized content.",
           },
         ],
       },
@@ -629,6 +802,15 @@ export class AlterLab implements INodeType {
             default: false,
             description:
               "Whether to return an error instead of escalating to expensive tiers",
+          },
+          {
+            displayName: "Time Budget (Seconds)",
+            name: "timeBudget",
+            type: "number",
+            default: 0,
+            typeOptions: { minValue: 0, maxValue: 300 },
+            description:
+              "Total wall-clock budget in seconds for the entire tier escalation sequence (5-300s). Escalation to the next tier is skipped if the remaining budget is insufficient. Set to 0 for no limit.",
           },
         ],
       },
@@ -861,6 +1043,131 @@ export class AlterLab implements INodeType {
             description:
               "How long to wait for the crawl to complete before timing out (10-3600s)",
           },
+          {
+            displayName: "Wait For (CSS Selector)",
+            name: "waitFor",
+            type: "string",
+            default: "",
+            placeholder: "#content, .main-article",
+            description:
+              "CSS selector to wait for on each crawled page before considering it ready",
+          },
+          {
+            displayName: "Respect Robots.txt",
+            name: "respectRobots",
+            type: "boolean",
+            default: true,
+            description: "Whether to respect robots.txt rules for the target domain",
+          },
+          {
+            displayName: "Include Subdomains",
+            name: "includeSubdomains",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to include links to subdomains during crawl discovery",
+          },
+          {
+            displayName: "Custom Sitemap Path",
+            name: "sitemapPath",
+            type: "string",
+            default: "",
+            placeholder: "/product-sitemap.xml",
+            description:
+              "Custom sitemap path instead of default /sitemap.xml discovery (must start with /)",
+          },
+          {
+            displayName: "Headers (JSON)",
+            name: "headers",
+            type: "json",
+            default: "",
+            placeholder: '{"Authorization": "Bearer token"}',
+            description:
+              "Custom HTTP headers injected into every page request during the crawl as a JSON object",
+          },
+          {
+            displayName: "Extraction Profile",
+            name: "extractionProfile",
+            type: "options",
+            default: "",
+            options: [
+              { name: "None", value: "" },
+              { name: "Auto", value: "auto" },
+              { name: "Article", value: "article" },
+              { name: "Event", value: "event" },
+              { name: "FAQ", value: "faq" },
+              { name: "Job Posting", value: "job_posting" },
+              { name: "Product", value: "product" },
+              { name: "Recipe", value: "recipe" },
+            ],
+            description:
+              "Pre-defined extraction profile applied to each crawled page",
+          },
+          {
+            displayName: "Extraction Schema (JSON)",
+            name: "extractionSchema",
+            type: "json",
+            default: "",
+            placeholder: '{"title": "string", "price": "number"}',
+            description:
+              "JSON schema for structured extraction on each crawled page",
+          },
+        ],
+      },
+
+      // ── Crawl Cost Controls ───────────────────────────────
+      {
+        displayName: "Cost Controls",
+        name: "crawlCostControls",
+        type: "collection",
+        placeholder: "Add Option",
+        default: {},
+        displayOptions: {
+          show: {
+            resource: ["crawl"],
+            crawlOperation: ["start"],
+          },
+        },
+        options: [
+          {
+            displayName: "Max Spend",
+            name: "maxCredits",
+            type: "number",
+            default: 0,
+            typeOptions: { minValue: 0 },
+            description:
+              "Maximum total credits to spend on this crawl (0 = no limit)",
+          },
+          {
+            displayName: "Force Tier",
+            name: "forceTier",
+            type: "options",
+            default: "",
+            options: [
+              { name: "None", value: "" },
+              { name: "T1 Curl — $0.0002", value: "1" },
+              { name: "T2 HTTP — $0.0003", value: "2" },
+              { name: "T3 Stealth — $0.002", value: "3" },
+              { name: "T3.5 Light JS — $0.0025", value: "3.5" },
+              { name: "T4 Browser — $0.004", value: "4" },
+            ],
+            description: "Force a specific scraping tier for all crawled pages",
+          },
+          {
+            displayName: "Max Tier",
+            name: "maxTier",
+            type: "options",
+            default: "",
+            options: [
+              { name: "None", value: "" },
+              { name: "T1 Curl — $0.0002", value: "1" },
+              { name: "T2 HTTP — $0.0003", value: "2" },
+              { name: "T3 Stealth — $0.002", value: "3" },
+              { name: "T3.5 Light JS — $0.0025", value: "3.5" },
+              { name: "T4 Browser — $0.004", value: "4" },
+            ],
+            description: "Maximum tier to escalate to for any single page",
+          },
         ],
       },
 
@@ -991,6 +1298,14 @@ export class AlterLab implements INodeType {
                 scrapeResults: [true],
               },
             },
+          },
+          {
+            displayName: "Safe Search",
+            name: "safeSearch",
+            type: "boolean",
+            default: true,
+            description:
+              "Whether to enable safe search filtering (default: true). When disabled, removes the adult content filter.",
           },
         ],
       },
@@ -1309,6 +1624,15 @@ export class AlterLab implements INodeType {
                 waitForCompletion: [true],
               },
             },
+          },
+          {
+            displayName: "Session ID",
+            name: "sessionId",
+            type: "string",
+            default: "",
+            placeholder: "e.g. a1b2c3d4-e5f6-...",
+            description:
+              "Apply a stored BYOS session to all URLs in the batch. All URLs must match the session's domain.",
           },
         ],
       },
@@ -2099,6 +2423,22 @@ export class AlterLab implements INodeType {
               delay?: number;
               timeout?: number;
               pollTimeout?: number;
+              waitFor?: string;
+              respectRobots?: boolean;
+              includeSubdomains?: boolean;
+              sitemapPath?: string;
+              headers?: string;
+              extractionProfile?: string;
+              extractionSchema?: string;
+            };
+            const crawlCostControls = this.getNodeParameter(
+              "crawlCostControls",
+              i,
+              {},
+            ) as {
+              maxCredits?: number;
+              forceTier?: string;
+              maxTier?: string;
             };
 
             const body: Record<string, unknown> = { url: crawlUrl };
@@ -2123,22 +2463,72 @@ export class AlterLab implements INodeType {
             if (settings.sitemap && settings.sitemap !== "include") {
               body.sitemap = settings.sitemap;
             }
+            if (settings.respectRobots === false)
+              body.respect_robots = false;
+            if (settings.includeSubdomains) body.include_subdomains = true;
+            if (settings.sitemapPath) body.sitemap_path = settings.sitemapPath;
+            if (settings.extractionProfile)
+              body.extraction_profile = settings.extractionProfile;
+            if (settings.extractionSchema) {
+              try {
+                body.extraction_schema =
+                  typeof settings.extractionSchema === "string"
+                    ? JSON.parse(settings.extractionSchema)
+                    : settings.extractionSchema;
+              } catch {
+                throw new NodeOperationError(
+                  this.getNode(),
+                  "Invalid JSON in Crawl Extraction Schema field",
+                  { itemIndex: i },
+                );
+              }
+            }
+
+            // max_concurrency belongs at the top level of the crawl request
+            // (not inside advanced) — fix for the previous misplacement bug
+            if (settings.maxConcurrency && settings.maxConcurrency !== 10) {
+              body.max_concurrency = settings.maxConcurrency;
+            }
 
             const advanced: Record<string, unknown> = {};
             if (settings.renderJs && settings.renderJs !== "false") {
               advanced.render_js = settings.renderJs === "auto" ? "auto" : true;
             }
             if (settings.useProxy) advanced.use_proxy = true;
-            if (settings.maxConcurrency && settings.maxConcurrency !== 10) {
-              advanced.max_concurrency = settings.maxConcurrency;
-            }
             if (settings.delay && settings.delay > 0) {
               advanced.delay = settings.delay;
             }
             if (settings.timeout && settings.timeout !== 90) {
               advanced.timeout = settings.timeout;
             }
+            if (settings.waitFor) advanced.wait_for = settings.waitFor;
+            if (settings.headers) {
+              try {
+                advanced.headers =
+                  typeof settings.headers === "string"
+                    ? JSON.parse(settings.headers)
+                    : settings.headers;
+              } catch {
+                throw new NodeOperationError(
+                  this.getNode(),
+                  "Invalid JSON in Crawl Headers field",
+                  { itemIndex: i },
+                );
+              }
+            }
             if (Object.keys(advanced).length > 0) body.advanced = advanced;
+
+            // Crawl cost controls
+            const crawlCostCtrl: Record<string, unknown> = {};
+            if (crawlCostControls.maxCredits && crawlCostControls.maxCredits > 0) {
+              crawlCostCtrl.max_credits = crawlCostControls.maxCredits;
+            }
+            if (crawlCostControls.forceTier)
+              crawlCostCtrl.force_tier = crawlCostControls.forceTier;
+            if (crawlCostControls.maxTier)
+              crawlCostCtrl.max_tier = crawlCostControls.maxTier;
+            if (Object.keys(crawlCostCtrl).length > 0)
+              body.cost_controls = crawlCostCtrl;
 
             // Submit the crawl
             const startResponse =
@@ -2259,6 +2649,7 @@ export class AlterLab implements INodeType {
             scrapeResults?: boolean;
             scrapeFormats?: string[];
             extractionSchema?: string;
+            safeSearch?: boolean;
           };
 
           const body: Record<string, unknown> = { query };
@@ -2287,6 +2678,7 @@ export class AlterLab implements INodeType {
               }
             }
           }
+          if (opts.safeSearch === false) body.safe_search = false;
 
           const response =
             await this.helpers.httpRequestWithAuthentication.call(
@@ -2537,6 +2929,7 @@ export class AlterLab implements INodeType {
             webhookUrl?: string;
             waitForCompletion?: boolean;
             pollTimeout?: number;
+            sessionId?: string;
           };
 
           let urls: unknown[];
@@ -2555,6 +2948,7 @@ export class AlterLab implements INodeType {
 
           const body: Record<string, unknown> = { urls };
           if (opts.webhookUrl) body.webhook_url = opts.webhookUrl;
+          if (opts.sessionId) body.session_id = opts.sessionId;
 
           const submitResponse =
             await this.helpers.httpRequestWithAuthentication.call(
@@ -2649,7 +3043,7 @@ export class AlterLab implements INodeType {
             i,
             {},
           ) as {
-            renderJs?: boolean;
+            renderJs?: string;
             useProxy?: boolean;
             proxyCountry?: string;
           };
@@ -2660,12 +3054,16 @@ export class AlterLab implements INodeType {
             preferCost?: boolean;
             preferSpeed?: boolean;
             failFast?: boolean;
+            timeBudget?: number;
           };
 
           const body: Record<string, unknown> = { url, mode };
 
           const advanced: Record<string, unknown> = {};
-          if (advancedOptions.renderJs) advanced.render_js = true;
+          if (advancedOptions.renderJs && advancedOptions.renderJs !== "false") {
+            advanced.render_js =
+              advancedOptions.renderJs === "auto" ? "auto" : true;
+          }
           if (advancedOptions.useProxy) advanced.use_proxy = true;
           if (advancedOptions.proxyCountry) {
             advanced.proxy_country = advancedOptions.proxyCountry;
@@ -2684,6 +3082,9 @@ export class AlterLab implements INodeType {
           if (costControls.preferCost) costCtrl.prefer_cost = true;
           if (costControls.preferSpeed) costCtrl.prefer_speed = true;
           if (costControls.failFast) costCtrl.fail_fast = true;
+          if (costControls.timeBudget && costControls.timeBudget >= 5) {
+            costCtrl.time_budget = costControls.timeBudget;
+          }
           if (Object.keys(costCtrl).length > 0) {
             body.cost_controls = costCtrl;
           }
@@ -2750,18 +3151,24 @@ export class AlterLab implements INodeType {
           i,
           {},
         ) as {
-          renderJs?: boolean;
+          renderJs?: string;
           screenshot?: boolean;
           generatePdf?: boolean;
           scrollToLoad?: boolean;
+          scrollCount?: number;
+          includeIframes?: boolean;
+          flattenShadowDom?: boolean;
           ocr?: boolean;
           useProxy?: boolean;
           proxyCountry?: string;
           waitCondition?: string;
+          waitFor?: string;
           removeCookieBanners?: boolean;
           cookies?: string;
           sectionFilter?: string;
           sessionId?: string;
+          sessionHeaders?: string;
+          forceRefresh?: boolean;
         };
         const extraction = this.getNodeParameter("extraction", i, {}) as {
           extractionProfile?: string;
@@ -2777,7 +3184,18 @@ export class AlterLab implements INodeType {
           preferCost?: boolean;
           preferSpeed?: boolean;
           failFast?: boolean;
+          timeBudget?: number;
         };
+        const headers = this.getNodeParameter("headers", i, "") as string;
+        const location = this.getNodeParameter("location", i, {}) as {
+          country?: string;
+          language?: string;
+        };
+        const contentType = this.getNodeParameter(
+          "contentType",
+          i,
+          "application/json",
+        ) as string;
 
         // Build request body
         const body: Record<string, unknown> = {
@@ -2792,6 +3210,32 @@ export class AlterLab implements INodeType {
         }
         if (requestBody && requestBody.trim()) {
           body.body = requestBody;
+          // Only send content_type when there's a body and it's not the default
+          if (contentType && contentType !== "application/json") {
+            body.content_type = contentType;
+          }
+        }
+
+        // Custom headers forwarded to the target URL
+        if (headers) {
+          try {
+            body.headers =
+              typeof headers === "string" ? JSON.parse(headers) : headers;
+          } catch {
+            throw new NodeOperationError(
+              this.getNode(),
+              "Invalid JSON in Headers field",
+              { itemIndex: i },
+            );
+          }
+        }
+
+        // Location (geo-targeting)
+        if (location.country || location.language) {
+          const loc: Record<string, string> = {};
+          if (location.country) loc.country = location.country.toUpperCase();
+          if (location.language) loc.language = location.language.toLowerCase();
+          body.location = loc;
         }
 
         // Output options
@@ -2821,10 +3265,22 @@ export class AlterLab implements INodeType {
 
         // Advanced options → nested "advanced" object
         const advanced: Record<string, unknown> = {};
-        if (advancedOptions.renderJs) advanced.render_js = true;
+        if (advancedOptions.renderJs && advancedOptions.renderJs !== "false") {
+          advanced.render_js =
+            advancedOptions.renderJs === "auto" ? "auto" : true;
+        }
         if (advancedOptions.screenshot) advanced.screenshot = true;
         if (advancedOptions.generatePdf) advanced.generate_pdf = true;
         if (advancedOptions.scrollToLoad) advanced.scroll_to_load = true;
+        if (
+          advancedOptions.scrollToLoad &&
+          advancedOptions.scrollCount !== undefined &&
+          advancedOptions.scrollCount !== 3
+        ) {
+          advanced.scroll_count = advancedOptions.scrollCount;
+        }
+        if (advancedOptions.includeIframes) advanced.include_iframes = true;
+        if (advancedOptions.flattenShadowDom) advanced.flatten_shadow_dom = true;
         if (advancedOptions.ocr) advanced.ocr = true;
         if (advancedOptions.useProxy) advanced.use_proxy = true;
         if (advancedOptions.proxyCountry) {
@@ -2835,6 +3291,9 @@ export class AlterLab implements INodeType {
           advancedOptions.waitCondition !== "networkidle"
         ) {
           advanced.wait_condition = advancedOptions.waitCondition;
+        }
+        if (advancedOptions.waitFor) {
+          advanced.wait_for = advancedOptions.waitFor;
         }
         if (advancedOptions.removeCookieBanners === false) {
           advanced.remove_cookie_banners = false;
@@ -2870,6 +3329,21 @@ export class AlterLab implements INodeType {
         if (advancedOptions.sessionId) {
           advanced.session_id = advancedOptions.sessionId;
         }
+        if (advancedOptions.sessionHeaders) {
+          try {
+            advanced.session_headers =
+              typeof advancedOptions.sessionHeaders === "string"
+                ? JSON.parse(advancedOptions.sessionHeaders)
+                : advancedOptions.sessionHeaders;
+          } catch {
+            throw new NodeOperationError(
+              this.getNode(),
+              "Invalid JSON in Session Headers field",
+              { itemIndex: i },
+            );
+          }
+        }
+        if (advancedOptions.forceRefresh) advanced.force_refresh = true;
         if (Object.keys(advanced).length > 0) {
           body.advanced = advanced;
         }
@@ -2919,6 +3393,9 @@ export class AlterLab implements INodeType {
         if (costControls.preferCost) costCtrl.prefer_cost = true;
         if (costControls.preferSpeed) costCtrl.prefer_speed = true;
         if (costControls.failFast) costCtrl.fail_fast = true;
+        if (costControls.timeBudget && costControls.timeBudget >= 5) {
+          costCtrl.time_budget = costControls.timeBudget;
+        }
         if (Object.keys(costCtrl).length > 0) {
           body.cost_controls = costCtrl;
         }
