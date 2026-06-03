@@ -196,25 +196,10 @@ export class AlterLab implements INodeType {
           {
             name: "POST",
             value: "POST",
-            description: "Form submissions, REST APIs, GraphQL",
-          },
-          {
-            name: "PUT",
-            value: "PUT",
-            description: "Full resource replacement",
-          },
-          {
-            name: "PATCH",
-            value: "PATCH",
-            description: "Partial resource update",
-          },
-          {
-            name: "DELETE",
-            value: "DELETE",
-            description: "Resource deletion",
+            description: "Form submissions, REST APIs, GraphQL. POST costs 1.5× the base tier price.",
           },
         ],
-        description: "HTTP method for the target URL request",
+        description: "HTTP method for the target URL request. The AlterLab API supports GET and POST only.",
       },
 
       // ── Request Body ─────────────────────────────────────
@@ -228,7 +213,7 @@ export class AlterLab implements INodeType {
         displayOptions: {
           show: {
             resource: ["scrape"],
-            httpMethod: ["POST", "PUT", "PATCH"],
+            httpMethod: ["POST"],
           },
         },
         description:
