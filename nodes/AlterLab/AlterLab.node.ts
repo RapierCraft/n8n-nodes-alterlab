@@ -540,6 +540,21 @@ export class AlterLab implements INodeType {
               "LLM model override for this request in provider-specific format (e.g. gpt-4o, claude-opus-4-5-20251101, llama3-70b-8192). Overrides the model configured on your BYOK key for this request only.",
           },
           {
+            displayName: "Extraction Provider",
+            name: "extractionProvider",
+            type: "options",
+            default: "",
+            options: [
+              { name: "Auto (use most recent BYOK key)", value: "" },
+              { name: "OpenAI", value: "openai" },
+              { name: "Anthropic", value: "anthropic" },
+              { name: "OpenRouter", value: "openrouter" },
+              { name: "Groq", value: "groq" },
+            ],
+            description:
+              "LLM provider to use for extraction. Selects the matching BYOK key registered at your AlterLab dashboard. When omitted, the most recently used registered key is used automatically.",
+          },
+          {
             displayName: "Promote Schema.org",
             name: "promoteSchemaOrg",
             type: "boolean",
@@ -873,6 +888,21 @@ export class AlterLab implements INodeType {
             placeholder: "gpt-4o",
             description:
               "LLM model override for each crawled page in provider-specific format (e.g. gpt-4o, claude-opus-4-5-20251101, llama3-70b-8192). Overrides the model configured on your BYOK key.",
+          },
+          {
+            displayName: "Extraction Provider",
+            name: "extractionProvider",
+            type: "options",
+            default: "",
+            options: [
+              { name: "Auto (use most recent BYOK key)", value: "" },
+              { name: "OpenAI", value: "openai" },
+              { name: "Anthropic", value: "anthropic" },
+              { name: "OpenRouter", value: "openrouter" },
+              { name: "Groq", value: "groq" },
+            ],
+            description:
+              "LLM provider to use for extraction on each crawled page. Selects the matching BYOK key registered at your AlterLab dashboard.",
           },
         ],
       },
@@ -1247,6 +1277,21 @@ export class AlterLab implements INodeType {
             placeholder: "gpt-4o",
             description:
               "LLM model override for this request in provider-specific format (e.g. gpt-4o, claude-opus-4-5-20251101, llama3-70b-8192). Overrides the model configured on your BYOK key for this request only.",
+          },
+          {
+            displayName: "Extraction Provider",
+            name: "extractionProvider",
+            type: "options",
+            default: "",
+            options: [
+              { name: "Auto (use most recent BYOK key)", value: "" },
+              { name: "OpenAI", value: "openai" },
+              { name: "Anthropic", value: "anthropic" },
+              { name: "OpenRouter", value: "openrouter" },
+              { name: "Groq", value: "groq" },
+            ],
+            description:
+              "LLM provider to use for extraction. Selects the matching BYOK key registered at your AlterLab dashboard.",
           },
           {
             displayName: "Source URL",
@@ -2122,6 +2167,7 @@ export class AlterLab implements INodeType {
               timeout?: number;
               pollTimeout?: number;
               extractionModel?: string;
+              extractionProvider?: string;
             };
 
             const body: Record<string, unknown> = { url: crawlUrl };
@@ -2148,6 +2194,9 @@ export class AlterLab implements INodeType {
             }
             if (settings.extractionModel) {
               body.extraction_model = settings.extractionModel;
+            }
+            if (settings.extractionProvider) {
+              body.extraction_provider = settings.extractionProvider;
             }
 
             const advanced: Record<string, unknown> = {};
@@ -2476,6 +2525,7 @@ export class AlterLab implements INodeType {
             extractionProfile?: string;
             extractionPrompt?: string;
             extractionModel?: string;
+            extractionProvider?: string;
             sourceUrl?: string;
             evidence?: boolean;
           };
@@ -2506,6 +2556,8 @@ export class AlterLab implements INodeType {
             body.extraction_prompt = opts.extractionPrompt;
           if (opts.extractionModel)
             body.extraction_model = opts.extractionModel;
+          if (opts.extractionProvider)
+            body.extraction_provider = opts.extractionProvider;
           if (opts.sourceUrl) body.source_url = opts.sourceUrl;
           if (opts.evidence) body.evidence = true;
 
@@ -2800,6 +2852,7 @@ export class AlterLab implements INodeType {
           extractionPrompt?: string;
           extractionSchema?: string;
           extractionModel?: string;
+          extractionProvider?: string;
           promoteSchemaOrg?: boolean;
           evidence?: boolean;
         };
@@ -2940,6 +2993,9 @@ export class AlterLab implements INodeType {
         }
         if (extraction.extractionModel) {
           body.extraction_model = extraction.extractionModel;
+        }
+        if (extraction.extractionProvider) {
+          body.extraction_provider = extraction.extractionProvider;
         }
 
         // Cost controls → nested "cost_controls" object
