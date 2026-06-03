@@ -509,6 +509,8 @@ export class AlterLab implements INodeType {
               { name: "FAQ", value: "faq" },
               { name: "Recipe", value: "recipe" },
               { name: "Event", value: "event" },
+              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
+              { name: "Directory Listing", value: "directory_listing" },
             ],
             description: "Pre-defined extraction profile for structured data",
           },
@@ -1182,7 +1184,7 @@ export class AlterLab implements INodeType {
         required: true,
         placeholder: "<html>...</html> or raw text / markdown",
         description:
-          "Raw content to extract from (HTML, text, or markdown — max 5 MB)",
+          "Raw content to extract from (HTML, text, or markdown — max 500,000 characters)",
         displayOptions: {
           show: {
             resource: ["extract"],
@@ -1252,6 +1254,8 @@ export class AlterLab implements INodeType {
               { name: "None", value: "" },
               { name: "Auto", value: "auto" },
               { name: "Article", value: "article" },
+              { name: "Directory Listing", value: "directory_listing" },
+              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
               { name: "Event", value: "event" },
               { name: "FAQ", value: "faq" },
               { name: "Job Posting", value: "job_posting" },
@@ -1259,6 +1263,26 @@ export class AlterLab implements INodeType {
               { name: "Recipe", value: "recipe" },
             ],
             description: "Pre-defined extraction profile (schema template)",
+          },
+          {
+            displayName: "Extraction Template",
+            name: "extractionTemplate",
+            type: "options",
+            default: "",
+            options: [
+              { name: "None", value: "" },
+              { name: "Auto", value: "auto" },
+              { name: "Article", value: "article" },
+              { name: "Directory Listing", value: "directory_listing" },
+              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
+              { name: "Event", value: "event" },
+              { name: "FAQ", value: "faq" },
+              { name: "Job Posting", value: "job_posting" },
+              { name: "Product", value: "product" },
+              { name: "Recipe", value: "recipe" },
+            ],
+            description:
+              "Shorthand alias for Extraction Profile. Mutually exclusive with Extraction Profile — use one or the other.",
           },
           {
             displayName: "Extraction Prompt",
@@ -1309,6 +1333,43 @@ export class AlterLab implements INodeType {
             default: false,
             description:
               "Whether to include provenance/evidence for extracted fields",
+          },
+          {
+            displayName: "Cache Control",
+            name: "cache",
+            type: "options",
+            default: "auto",
+            options: [
+              {
+                name: "Auto (return cached if available)",
+                value: "auto",
+                description:
+                  "Return cached LLM extraction result if available, otherwise call the LLM and cache the result",
+              },
+              {
+                name: "Skip (bypass cache, always call LLM)",
+                value: "skip",
+                description:
+                  "Bypass cache lookup and always invoke the LLM. Result is still stored for future callers.",
+              },
+              {
+                name: "Only (cached result or 404)",
+                value: "only",
+                description:
+                  "Return cached result only. Returns HTTP 404 if the result is not cached — never calls the LLM.",
+              },
+            ],
+            description:
+              "Cache control for LLM extraction results. auto: use cache if available (default). skip: always call LLM. only: return cached or 404.",
+          },
+          {
+            displayName: "Cache TTL (Seconds)",
+            name: "cacheTtl",
+            type: "number",
+            default: 3600,
+            typeOptions: { minValue: 1, maxValue: 86400 },
+            description:
+              "How long to cache this extraction result in seconds (1–86400). Defaults to 3600s (1 hour). Max 86400s (24 hours).",
           },
         ],
       },
@@ -2523,11 +2584,14 @@ export class AlterLab implements INodeType {
             formats?: string[];
             extractionSchema?: string;
             extractionProfile?: string;
+            extractionTemplate?: string;
             extractionPrompt?: string;
             extractionModel?: string;
             extractionProvider?: string;
             sourceUrl?: string;
             evidence?: boolean;
+            cache?: string;
+            cacheTtl?: number;
           };
 
           const body: Record<string, unknown> = {
@@ -2552,6 +2616,8 @@ export class AlterLab implements INodeType {
           }
           if (opts.extractionProfile)
             body.extraction_profile = opts.extractionProfile;
+          if (opts.extractionTemplate)
+            body.extraction_template = opts.extractionTemplate;
           if (opts.extractionPrompt)
             body.extraction_prompt = opts.extractionPrompt;
           if (opts.extractionModel)
@@ -2560,6 +2626,9 @@ export class AlterLab implements INodeType {
             body.extraction_provider = opts.extractionProvider;
           if (opts.sourceUrl) body.source_url = opts.sourceUrl;
           if (opts.evidence) body.evidence = true;
+          if (opts.cache && opts.cache !== "auto") body.cache = opts.cache;
+          if (opts.cacheTtl && opts.cacheTtl !== 3600)
+            body.cache_ttl = opts.cacheTtl;
 
           const response =
             await this.helpers.httpRequestWithAuthentication.call(
@@ -2591,8 +2660,17 @@ export class AlterLab implements INodeType {
             creditsUsed: data.credits_used ?? 0,
             modelUsed: data.model_used ?? null,
             extractionMethod: data.extraction_method ?? "algorithmic",
+            extractionProfile: data.extraction_profile ?? null,
             contentSizeChars: data.content_size_chars ?? 0,
+            cacheHit: (data.cache_hit as boolean) ?? false,
           };
+
+          if (
+            data.extraction_metadata !== undefined &&
+            data.extraction_metadata !== null
+          ) {
+            output.extractionMetadata = data.extraction_metadata as IDataObject;
+          }
 
           // Flatten format results into top-level keys
           if (formats && typeof formats === "object") {
