@@ -196,10 +196,12 @@ export class AlterLab implements INodeType {
           {
             name: "POST",
             value: "POST",
-            description: "Form submissions, REST APIs, GraphQL. POST costs 1.5× the base tier price.",
+            description:
+              "Form submissions, REST APIs, GraphQL. POST costs 1.5× the base tier price.",
           },
         ],
-        description: "HTTP method for the target URL request. The AlterLab API supports GET and POST only.",
+        description:
+          "HTTP method for the target URL request. The AlterLab API supports GET and POST only.",
       },
 
       // ── Request Body ─────────────────────────────────────
@@ -3052,7 +3054,10 @@ export class AlterLab implements INodeType {
           sizeBytes: (data.size_bytes as number) ?? 0,
         };
 
-        // Flatten multi-format content
+        // Flatten multi-format content.
+        // When extraction_schema is provided, the API overrides content.json
+        // with the filtered/extracted schema result (PR #19898). output.json
+        // therefore carries the extraction result in that case.
         if (content && typeof content === "object") {
           output.markdown =
             (content as Record<string, unknown>).markdown ?? null;
@@ -3065,7 +3070,8 @@ export class AlterLab implements INodeType {
           output.markdown = content ?? null;
         }
 
-        // Extraction results
+        // Extraction results — top-level filtered_content is still returned
+        // by the API alongside the content.json override above.
         output.filteredContent = data.filtered_content ?? null;
         output.extractionMethod = data.extraction_method ?? null;
 
