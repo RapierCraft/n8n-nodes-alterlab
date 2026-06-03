@@ -544,6 +544,15 @@ export class AlterLab implements INodeType {
             description: "JSON Schema to filter and structure extracted data",
           },
           {
+            displayName: "Extraction Model",
+            name: "extractionModel",
+            type: "string",
+            default: "",
+            placeholder: "gpt-4o",
+            description:
+              "LLM model override for this request in provider-specific format (e.g. gpt-4o, claude-opus-4-5-20251101, llama3-70b-8192). Overrides the model configured on your BYOK key for this request only.",
+          },
+          {
             displayName: "Promote Schema.org",
             name: "promoteSchemaOrg",
             type: "boolean",
@@ -868,6 +877,15 @@ export class AlterLab implements INodeType {
             typeOptions: { minValue: 10, maxValue: 3600 },
             description:
               "How long to wait for the crawl to complete before timing out (10-3600s)",
+          },
+          {
+            displayName: "Extraction Model",
+            name: "extractionModel",
+            type: "string",
+            default: "",
+            placeholder: "gpt-4o",
+            description:
+              "LLM model override for each crawled page in provider-specific format (e.g. gpt-4o, claude-opus-4-5-20251101, llama3-70b-8192). Overrides the model configured on your BYOK key.",
           },
         ],
       },
@@ -1233,6 +1251,15 @@ export class AlterLab implements INodeType {
             default: "",
             placeholder: "Extract the product name, price, and availability...",
             description: "Natural language extraction instructions for the LLM",
+          },
+          {
+            displayName: "Extraction Model",
+            name: "extractionModel",
+            type: "string",
+            default: "",
+            placeholder: "gpt-4o",
+            description:
+              "LLM model override for this request in provider-specific format (e.g. gpt-4o, claude-opus-4-5-20251101, llama3-70b-8192). Overrides the model configured on your BYOK key for this request only.",
           },
           {
             displayName: "Source URL",
@@ -2107,6 +2134,7 @@ export class AlterLab implements INodeType {
               delay?: number;
               timeout?: number;
               pollTimeout?: number;
+              extractionModel?: string;
             };
 
             const body: Record<string, unknown> = { url: crawlUrl };
@@ -2130,6 +2158,9 @@ export class AlterLab implements INodeType {
             }
             if (settings.sitemap && settings.sitemap !== "include") {
               body.sitemap = settings.sitemap;
+            }
+            if (settings.extractionModel) {
+              body.extraction_model = settings.extractionModel;
             }
 
             const advanced: Record<string, unknown> = {};
@@ -2457,6 +2488,7 @@ export class AlterLab implements INodeType {
             extractionSchema?: string;
             extractionProfile?: string;
             extractionPrompt?: string;
+            extractionModel?: string;
             sourceUrl?: string;
             evidence?: boolean;
           };
@@ -2485,6 +2517,8 @@ export class AlterLab implements INodeType {
             body.extraction_profile = opts.extractionProfile;
           if (opts.extractionPrompt)
             body.extraction_prompt = opts.extractionPrompt;
+          if (opts.extractionModel)
+            body.extraction_model = opts.extractionModel;
           if (opts.sourceUrl) body.source_url = opts.sourceUrl;
           if (opts.evidence) body.evidence = true;
 
@@ -2778,6 +2812,7 @@ export class AlterLab implements INodeType {
           extractionProfile?: string;
           extractionPrompt?: string;
           extractionSchema?: string;
+          extractionModel?: string;
           promoteSchemaOrg?: boolean;
           evidence?: boolean;
         };
@@ -2915,6 +2950,9 @@ export class AlterLab implements INodeType {
         }
         if (extraction.evidence) {
           body.evidence = true;
+        }
+        if (extraction.extractionModel) {
+          body.extraction_model = extraction.extractionModel;
         }
 
         // Cost controls → nested "cost_controls" object
