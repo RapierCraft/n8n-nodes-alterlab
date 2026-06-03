@@ -3286,7 +3286,7 @@ function handleApiError(
     case 402:
       throw new NodeApiError(ctx.getNode(), body, {
         message: "Insufficient balance",
-        description: `${detail}. Top up your balance at https://app.alterlab.io/dashboard/billing?${UTM}`,
+        description: `Top up your balance at https://app.alterlab.io/dashboard/billing?${UTM}`,
         httpCode: "402",
         itemIndex,
       });
