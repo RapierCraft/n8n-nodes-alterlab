@@ -406,6 +406,14 @@ export class AlterLab implements INodeType {
             description: "Whether to route through a premium proxy (+$0.0002)",
           },
           {
+            displayName: "Use System Proxy",
+            name: "useSystemProxy",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to override your default BYOP (Bring Your Own Proxy) integration and use AlterLab's system proxy for this request instead",
+          },
+          {
             displayName: "Proxy Country",
             name: "proxyCountry",
             type: "string",
@@ -2651,6 +2659,7 @@ export class AlterLab implements INodeType {
           ) as {
             renderJs?: boolean;
             useProxy?: boolean;
+            useSystemProxy?: boolean;
             proxyCountry?: string;
           };
           const costControls = this.getNodeParameter("costControls", i, {}) as {
@@ -2667,6 +2676,7 @@ export class AlterLab implements INodeType {
           const advanced: Record<string, unknown> = {};
           if (advancedOptions.renderJs) advanced.render_js = true;
           if (advancedOptions.useProxy) advanced.use_proxy = true;
+          if (advancedOptions.useSystemProxy) advanced.use_system_proxy = true;
           if (advancedOptions.proxyCountry) {
             advanced.proxy_country = advancedOptions.proxyCountry;
           }
@@ -2756,6 +2766,7 @@ export class AlterLab implements INodeType {
           scrollToLoad?: boolean;
           ocr?: boolean;
           useProxy?: boolean;
+          useSystemProxy?: boolean;
           proxyCountry?: string;
           waitCondition?: string;
           removeCookieBanners?: boolean;
@@ -2827,6 +2838,7 @@ export class AlterLab implements INodeType {
         if (advancedOptions.scrollToLoad) advanced.scroll_to_load = true;
         if (advancedOptions.ocr) advanced.ocr = true;
         if (advancedOptions.useProxy) advanced.use_proxy = true;
+        if (advancedOptions.useSystemProxy) advanced.use_system_proxy = true;
         if (advancedOptions.proxyCountry) {
           advanced.proxy_country = advancedOptions.proxyCountry;
         }
