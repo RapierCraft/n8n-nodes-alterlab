@@ -1,0 +1,177 @@
+{
+  "name": "Track Google SERP rankings weekly → Google Sheets (AlterLab)",
+  "description": "Track your website's Google search rankings for target keywords on a weekly schedule. AlterLab's Search resource fetches real-time SERP results with anti-bot bypass, returning structured ranking data without Google blocking your requests.\n\nStores historical ranking data in Google Sheets for trend analysis. Works for any domain and any keywords.\n\nPowered by AlterLab web scraping API. Get started free at https://app.alterlab.io/signin",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "d6e7f8a9-b0c1-2345-defa-456789012345",
+      "name": "Schedule — Every Monday at 8am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 340]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "targetDomain",
+              "value": "alterlab.io"
+            }
+          ],
+          "array": [
+            {
+              "name": "keywords",
+              "value": "=[\"web scraping API\", \"anti-bot bypass\", \"scrape websites automatically\", \"web scraping service\", \"Cloudflare bypass API\"]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e7f8a9b0-c1d2-3456-efab-567890123456",
+      "name": "Keywords and target domain",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 340]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "keywords",
+        "options": {}
+      },
+      "id": "f8a9b0c1-d2e3-4567-fabc-678901234567",
+      "name": "Split keywords",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [680, 340]
+    },
+    {
+      "parameters": {
+        "resource": "search",
+        "query": "={{ $json.keywords }}",
+        "additionalFields": {
+          "numResults": 100,
+          "country": "us",
+          "language": "en",
+          "outputFormat": "json"
+        }
+      },
+      "id": "a9b0c1d2-e3f4-5678-abcd-789012345678",
+      "name": "AlterLab — Google SERP search",
+      "type": "n8n-nodes-alterlab.alterLab",
+      "typeVersion": 1,
+      "position": [900, 340],
+      "credentials": {
+        "alterLabApi": {
+          "id": "alterlab-api-credential",
+          "name": "AlterLab API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const keyword = $input.item.json.query || $input.item.json.searchParameters?.q || '';\nconst targetDomain = $('Keywords and target domain').first().json.targetDomain;\nconst results = $input.item.json.organicResults || $input.item.json.json?.organicResults || [];\n\nlet ranking = null;\nlet rankingUrl = null;\n\nfor (let i = 0; i < results.length; i++) {\n  const resultUrl = results[i].link || results[i].url || '';\n  if (resultUrl.includes(targetDomain)) {\n    ranking = i + 1;\n    rankingUrl = resultUrl;\n    break;\n  }\n}\n\nreturn [{\n  json: {\n    keyword,\n    targetDomain,\n    ranking: ranking || 'Not in top 100',\n    rankingUrl: rankingUrl || '',\n    totalResults: results.length,\n    checkedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "b0c1d2e3-f4a5-6789-bcde-890123456789",
+      "name": "Find domain ranking position",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 340]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "your-google-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Rankings",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "keyword": "={{ $json.keyword }}",
+            "target_domain": "={{ $json.targetDomain }}",
+            "ranking_position": "={{ $json.ranking }}",
+            "ranking_url": "={{ $json.rankingUrl }}",
+            "results_in_top_100": "={{ $json.totalResults }}",
+            "checked_at": "={{ $json.checkedAt }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {"id": "keyword", "displayName": "Keyword", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true},
+            {"id": "target_domain", "displayName": "Target Domain", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true},
+            {"id": "ranking_position", "displayName": "Ranking Position", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false},
+            {"id": "ranking_url", "displayName": "Ranking URL", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false},
+            {"id": "results_in_top_100", "displayName": "Results in Top 100", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": false},
+            {"id": "checked_at", "displayName": "Checked At", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false}
+          ]
+        },
+        "options": {}
+      },
+      "id": "c1d2e3f4-a5b6-7890-cdef-901234567890",
+      "name": "Google Sheets — Store ranking",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1340, 340],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule — Every Monday at 8am": {
+      "main": [
+        [{"node": "Keywords and target domain", "type": "main", "index": 0}]
+      ]
+    },
+    "Keywords and target domain": {
+      "main": [
+        [{"node": "Split keywords", "type": "main", "index": 0}]
+      ]
+    },
+    "Split keywords": {
+      "main": [
+        [{"node": "AlterLab — Google SERP search", "type": "main", "index": 0}]
+      ]
+    },
+    "AlterLab — Google SERP search": {
+      "main": [
+        [{"node": "Find domain ranking position", "type": "main", "index": 0}]
+      ]
+    },
+    "Find domain ranking position": {
+      "main": [
+        [{"node": "Google Sheets — Store ranking", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {"createdAt": "2026-06-29T00:00:00.000Z", "updatedAt": "2026-06-29T00:00:00.000Z", "id": "tag-seo", "name": "SEO"},
+    {"createdAt": "2026-06-29T00:00:00.000Z", "updatedAt": "2026-06-29T00:00:00.000Z", "id": "tag-serp", "name": "SERP"},
+    {"createdAt": "2026-06-29T00:00:00.000Z", "updatedAt": "2026-06-29T00:00:00.000Z", "id": "tag-rank-tracking", "name": "rank tracking"}
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2026-06-29T00:00:00.000Z",
+  "versionId": "v1.0.0"
+}

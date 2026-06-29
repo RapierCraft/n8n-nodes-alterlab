@@ -1,0 +1,222 @@
+{
+  "name": "Scrape Reddit + social media → AI sentiment analysis (AlterLab)",
+  "description": "Monitor Reddit and other social media for brand or topic mentions, then run AI sentiment analysis on each post. AlterLab bypasses Reddit's API restrictions and anti-scraping measures, returning structured post data.\n\nResults stored in Notion with sentiment scores, enabling trend tracking of how people discuss your brand, product, or any topic over time.\n\nPowered by AlterLab web scraping API. Get started free at https://app.alterlab.io/signin",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 10 * * *"
+            }
+          ]
+        }
+      },
+      "id": "d2e3f4a5-b6c7-8901-defa-012345678901",
+      "name": "Schedule — Daily at 10am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 340]
+    },
+    {
+      "parameters": {
+        "values": {
+          "array": [
+            {
+              "name": "subreddits",
+              "value": "=[{\"subreddit\": \"webdev\", \"keyword\": \"web scraping\"}, {\"subreddit\": \"entrepreneur\", \"keyword\": \"data extraction\"}, {\"subreddit\": \"datascience\", \"keyword\": \"web scraping API\"}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e3f4a5b6-c7d8-9012-efab-123456789012",
+      "name": "Subreddits and keywords to monitor",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 340]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "subreddits",
+        "options": {}
+      },
+      "id": "f4a5b6c7-d8e9-0123-fabc-234567890123",
+      "name": "Split into subreddits",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [680, 340]
+    },
+    {
+      "parameters": {
+        "resource": "scrape",
+        "operation": "scrape",
+        "url": "=https://www.reddit.com/r/{{ $json.subreddit }}/search.json?q={{ encodeURIComponent($json.keyword) }}&restrict_sr=1&sort=new&limit=25",
+        "mode": "auto",
+        "additionalFields": {
+          "outputFormat": "json",
+          "httpMethod": "GET"
+        }
+      },
+      "id": "a5b6c7d8-e9f0-1234-abcd-345678901234",
+      "name": "AlterLab — Scrape Reddit search",
+      "type": "n8n-nodes-alterlab.alterLab",
+      "typeVersion": 1,
+      "position": [900, 340],
+      "credentials": {
+        "alterLabApi": {
+          "id": "alterlab-api-credential",
+          "name": "AlterLab API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const subreddit = $input.item.json.subreddit || $('Split into subreddits').item.json.subreddit;\nconst keyword = $input.item.json.keyword || $('Split into subreddits').item.json.keyword;\n\nlet posts = [];\ntry {\n  const raw = $input.item.json.json || $input.item.json.filteredContent || {};\n  const rawPosts = raw?.data?.children || [];\n  posts = rawPosts.slice(0, 10).map(p => ({\n    id: p?.data?.id || '',\n    title: p?.data?.title || '',\n    text: (p?.data?.selftext || '').substring(0, 1000),\n    url: `https://reddit.com${p?.data?.permalink || ''}`,\n    score: p?.data?.score || 0,\n    comments: p?.data?.num_comments || 0,\n    created: new Date((p?.data?.created_utc || 0) * 1000).toISOString(),\n    subreddit,\n    keyword\n  }));\n} catch(e) {}\n\nreturn posts.map(post => ({ json: post }));"
+      },
+      "id": "b6c7d8e9-f0a1-2345-bcde-456789012345",
+      "name": "Extract Reddit posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 340]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "Analyze the sentiment of this Reddit post about web scraping. Respond with a JSON object containing: sentiment (positive/neutral/negative), score (-1.0 to 1.0), key_themes (array of strings), pain_points (array of strings if negative), opportunities (array of strings if positive or neutral), and summary (1 sentence).\n\nTitle: {{ $json.title }}\nContent: {{ $json.text }}"
+            }
+          ]
+        },
+        "options": {
+          "responseFormat": "json_object",
+          "maxTokens": 300
+        }
+      },
+      "id": "c7d8e9f0-a1b2-3456-cdef-567890123456",
+      "name": "OpenAI — Sentiment analysis",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.7,
+      "position": [1340, 340],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": {
+          "__rl": true,
+          "value": "your-notion-database-id",
+          "mode": "id"
+        },
+        "title": "={{ $('Extract Reddit posts').item.json.title }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Subreddit",
+              "textValue": "={{ $('Extract Reddit posts').item.json.subreddit }}"
+            },
+            {
+              "key": "Keyword",
+              "textValue": "={{ $('Extract Reddit posts').item.json.keyword }}"
+            },
+            {
+              "key": "Sentiment",
+              "selectValue": "={{ JSON.parse($json.message?.content || '{}').sentiment || 'neutral' }}"
+            },
+            {
+              "key": "Score",
+              "numberValue": "={{ JSON.parse($json.message?.content || '{}').score || 0 }}"
+            },
+            {
+              "key": "Summary",
+              "textValue": "={{ JSON.parse($json.message?.content || '{}').summary || '' }}"
+            },
+            {
+              "key": "Reddit URL",
+              "urlValue": "={{ $('Extract Reddit posts').item.json.url }}"
+            },
+            {
+              "key": "Reddit Score",
+              "numberValue": "={{ $('Extract Reddit posts').item.json.score }}"
+            },
+            {
+              "key": "Posted At",
+              "dateValue": "={{ $('Extract Reddit posts').item.json.created }}"
+            }
+          ]
+        }
+      },
+      "id": "d8e9f0a1-b2c3-4567-defa-678901234567",
+      "name": "Notion — Store sentiment result",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1560, 340],
+      "credentials": {
+        "notionApi": {
+          "id": "notion-credential",
+          "name": "Notion API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule — Daily at 10am": {
+      "main": [
+        [{"node": "Subreddits and keywords to monitor", "type": "main", "index": 0}]
+      ]
+    },
+    "Subreddits and keywords to monitor": {
+      "main": [
+        [{"node": "Split into subreddits", "type": "main", "index": 0}]
+      ]
+    },
+    "Split into subreddits": {
+      "main": [
+        [{"node": "AlterLab — Scrape Reddit search", "type": "main", "index": 0}]
+      ]
+    },
+    "AlterLab — Scrape Reddit search": {
+      "main": [
+        [{"node": "Extract Reddit posts", "type": "main", "index": 0}]
+      ]
+    },
+    "Extract Reddit posts": {
+      "main": [
+        [{"node": "OpenAI — Sentiment analysis", "type": "main", "index": 0}]
+      ]
+    },
+    "OpenAI — Sentiment analysis": {
+      "main": [
+        [{"node": "Notion — Store sentiment result", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {"createdAt": "2026-06-29T00:00:00.000Z", "updatedAt": "2026-06-29T00:00:00.000Z", "id": "tag-sentiment", "name": "sentiment analysis"},
+    {"createdAt": "2026-06-29T00:00:00.000Z", "updatedAt": "2026-06-29T00:00:00.000Z", "id": "tag-reddit", "name": "Reddit"},
+    {"createdAt": "2026-06-29T00:00:00.000Z", "updatedAt": "2026-06-29T00:00:00.000Z", "id": "tag-marketing", "name": "marketing"}
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2026-06-29T00:00:00.000Z",
+  "versionId": "v1.0.0"
+}

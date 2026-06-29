@@ -1,0 +1,185 @@
+{
+  "name": "Enrich CRM leads from company websites (AlterLab)",
+  "description": "Automatically enrich CRM leads by scraping company websites for contact info, employee count, tech stack, and services. AlterLab extracts structured company data from any website — including JavaScript-rendered pages that block standard HTTP requests.\n\nInput a list of company URLs from your CRM and get back enriched B2B data ready to import back. Works with HubSpot, Salesforce, Airtable, or any spreadsheet.\n\nPowered by AlterLab web scraping API. Get started free at https://app.alterlab.io/signin",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "e1f2a3b4-c5d6-7890-efab-901234567890",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 340]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "your-google-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": []
+        },
+        "options": {}
+      },
+      "id": "f2a3b4c5-d6e7-8901-fabc-012345678901",
+      "name": "Google Sheets — Read lead URLs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [460, 340],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "scrape",
+        "operation": "scrape",
+        "url": "={{ $json.website_url }}",
+        "mode": "auto",
+        "additionalFields": {
+          "extractionPrompt": "Extract the following company information: company name, tagline/description (1-2 sentences), main products or services (list), company size or employee count if mentioned, headquarters location, founding year if mentioned, email addresses, phone numbers, and social media links (LinkedIn, Twitter). Return as structured JSON.",
+          "outputFormat": "json"
+        }
+      },
+      "id": "a3b4c5d6-e7f8-9012-abcd-123456789012",
+      "name": "AlterLab — Scrape company homepage",
+      "type": "n8n-nodes-alterlab.alterLab",
+      "typeVersion": 1,
+      "position": [700, 340],
+      "credentials": {
+        "alterLabApi": {
+          "id": "alterlab-api-credential",
+          "name": "AlterLab API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "lead_url",
+              "value": "={{ $('Google Sheets — Read lead URLs').item.json.website_url }}"
+            },
+            {
+              "name": "lead_company",
+              "value": "={{ $('Google Sheets — Read lead URLs').item.json.company_name }}"
+            },
+            {
+              "name": "enriched_data",
+              "value": "={{ JSON.stringify($json.filteredContent || $json.json || {}) }}"
+            },
+            {
+              "name": "company_description",
+              "value": "={{ ($json.filteredContent?.description || $json.filteredContent?.tagline || $json.json?.description || '').substring(0, 500) }}"
+            },
+            {
+              "name": "scraping_cost",
+              "value": "={{ $json.billing?.cost }}"
+            },
+            {
+              "name": "enriched_at",
+              "value": "={{ $now.toISO() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b4c5d6e7-f8a9-0123-bcde-234567890123",
+      "name": "Format enriched data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [920, 340]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "your-google-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Enriched",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "company_url": "={{ $json.lead_url }}",
+            "company_name": "={{ $json.lead_company }}",
+            "description": "={{ $json.company_description }}",
+            "enriched_data_json": "={{ $json.enriched_data }}",
+            "scraping_cost_usd": "={{ $json.scraping_cost }}",
+            "enriched_at": "={{ $json.enriched_at }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {"id": "company_url", "displayName": "Company URL", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true},
+            {"id": "company_name", "displayName": "Company Name", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true},
+            {"id": "description", "displayName": "Description", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false},
+            {"id": "enriched_data_json", "displayName": "Enriched Data (JSON)", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false},
+            {"id": "scraping_cost_usd", "displayName": "Scraping Cost (USD)", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": false},
+            {"id": "enriched_at", "displayName": "Enriched At", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false}
+          ]
+        },
+        "options": {}
+      },
+      "id": "c5d6e7f8-a9b0-1234-cdef-345678901234",
+      "name": "Google Sheets — Write enriched data",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1140, 340],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [
+        [{"node": "Google Sheets — Read lead URLs", "type": "main", "index": 0}]
+      ]
+    },
+    "Google Sheets — Read lead URLs": {
+      "main": [
+        [{"node": "AlterLab — Scrape company homepage", "type": "main", "index": 0}]
+      ]
+    },
+    "AlterLab — Scrape company homepage": {
+      "main": [
+        [{"node": "Format enriched data", "type": "main", "index": 0}]
+      ]
+    },
+    "Format enriched data": {
+      "main": [
+        [{"node": "Google Sheets — Write enriched data", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {"createdAt": "2026-06-29T00:00:00.000Z", "updatedAt": "2026-06-29T00:00:00.000Z", "id": "tag-lead-enrichment", "name": "lead enrichment"},
+    {"createdAt": "2026-06-29T00:00:00.000Z", "updatedAt": "2026-06-29T00:00:00.000Z", "id": "tag-crm", "name": "CRM"},
+    {"createdAt": "2026-06-29T00:00:00.000Z", "updatedAt": "2026-06-29T00:00:00.000Z", "id": "tag-b2b", "name": "B2B"}
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2026-06-29T00:00:00.000Z",
+  "versionId": "v1.0.0"
+}

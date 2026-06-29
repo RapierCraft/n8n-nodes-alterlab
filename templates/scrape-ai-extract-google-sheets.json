@@ -1,0 +1,135 @@
+{
+  "name": "Scrape any website + AI extract → Google Sheets (AlterLab)",
+  "description": "Scrape any website and extract structured data using AI, then append results to Google Sheets. AlterLab handles anti-bot protection automatically — works on Cloudflare, DataDome, React SPAs, and any modern website. No proxies or browser setup needed.\n\nPowered by AlterLab web scraping API. Get started free at https://app.alterlab.io/signin",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 340]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "url",
+              "value": "https://www.example.com/product/123"
+            },
+            {
+              "name": "extractionPrompt",
+              "value": "Extract the product name, price, currency, rating, and availability from this page."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "Input — URL and extraction prompt",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 340]
+    },
+    {
+      "parameters": {
+        "resource": "scrape",
+        "operation": "scrape",
+        "url": "={{ $json.url }}",
+        "mode": "auto",
+        "additionalFields": {
+          "extractionPrompt": "={{ $json.extractionPrompt }}",
+          "outputFormat": "json"
+        }
+      },
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "name": "AlterLab — Scrape & AI Extract",
+      "type": "n8n-nodes-alterlab.alterLab",
+      "typeVersion": 1,
+      "position": [700, 340],
+      "credentials": {
+        "alterLabApi": {
+          "id": "alterlab-api-credential",
+          "name": "AlterLab API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "your-google-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "url": "={{ $('Input — URL and extraction prompt').item.json.url }}",
+            "extracted_data": "={{ JSON.stringify($json.filteredContent || $json.json) }}",
+            "page_title": "={{ $json.title }}",
+            "scraping_tier": "={{ $json.billing?.tier }}",
+            "cost_usd": "={{ $json.billing?.cost }}",
+            "scraped_at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {"id": "url", "displayName": "URL", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true},
+            {"id": "extracted_data", "displayName": "Extracted Data", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false},
+            {"id": "page_title", "displayName": "Page Title", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false},
+            {"id": "scraping_tier", "displayName": "Scraping Tier", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false},
+            {"id": "cost_usd", "displayName": "Cost (USD)", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": false},
+            {"id": "scraped_at", "displayName": "Scraped At", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false}
+          ]
+        },
+        "options": {}
+      },
+      "id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "name": "Google Sheets — Append Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [940, 340],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [
+        [{"node": "Input — URL and extraction prompt", "type": "main", "index": 0}]
+      ]
+    },
+    "Input — URL and extraction prompt": {
+      "main": [
+        [{"node": "AlterLab — Scrape & AI Extract", "type": "main", "index": 0}]
+      ]
+    },
+    "AlterLab — Scrape & AI Extract": {
+      "main": [
+        [{"node": "Google Sheets — Append Row", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {"createdAt": "2026-06-29T00:00:00.000Z", "updatedAt": "2026-06-29T00:00:00.000Z", "id": "tag-web-scraping", "name": "web scraping"},
+    {"createdAt": "2026-06-29T00:00:00.000Z", "updatedAt": "2026-06-29T00:00:00.000Z", "id": "tag-ai", "name": "AI"},
+    {"createdAt": "2026-06-29T00:00:00.000Z", "updatedAt": "2026-06-29T00:00:00.000Z", "id": "tag-google-sheets", "name": "Google Sheets"}
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2026-06-29T00:00:00.000Z",
+  "versionId": "v1.0.0"
+}

@@ -1,0 +1,168 @@
+{
+  "name": "Monitor competitor prices daily → Slack alert (AlterLab)",
+  "description": "Monitor competitor product prices daily. AlterLab scrapes e-commerce sites (Amazon, Shopify, Walmart, any retailer) that block standard HTTP requests — handling Cloudflare and anti-bot protection automatically. Compares against your target price and sends a Slack alert when the price drops below your threshold.\n\nPowered by AlterLab web scraping API. Get started free at https://app.alterlab.io/signin",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+      "name": "Schedule — Daily at 9am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 340]
+    },
+    {
+      "parameters": {
+        "values": {
+          "array": [
+            {
+              "name": "products",
+              "value": "=[{\"name\": \"Competitor Product A\", \"url\": \"https://www.competitor.com/product-a\", \"targetPrice\": 49.99}, {\"name\": \"Competitor Product B\", \"url\": \"https://www.competitor.com/product-b\", \"targetPrice\": 29.99}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+      "name": "Products to monitor",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 340]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "products",
+        "options": {}
+      },
+      "id": "a7b8c9d0-e1f2-3456-abcd-567890123456",
+      "name": "Split into individual products",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [680, 340]
+    },
+    {
+      "parameters": {
+        "resource": "scrape",
+        "operation": "scrape",
+        "url": "={{ $json.url }}",
+        "mode": "auto",
+        "additionalFields": {
+          "extractionProfile": "product",
+          "outputFormat": "json"
+        }
+      },
+      "id": "b8c9d0e1-f2a3-4567-bcde-678901234567",
+      "name": "AlterLab — Scrape product page",
+      "type": "n8n-nodes-alterlab.alterLab",
+      "typeVersion": 1,
+      "position": [900, 340],
+      "credentials": {
+        "alterLabApi": {
+          "id": "alterlab-api-credential",
+          "name": "AlterLab API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "price-below-target",
+              "leftValue": "={{ $json.json?.price || $json.filteredContent?.price }}",
+              "rightValue": "={{ $('Split into individual products').item.json.targetPrice }}",
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c9d0e1f2-a3b4-5678-cdef-789012345678",
+      "name": "Price below threshold?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 340]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "your-slack-channel-id",
+          "mode": "id"
+        },
+        "text": "=🔔 *Price Alert: {{ $('Split into individual products').item.json.name }}*\n\nCurrent price: *${{ $('AlterLab — Scrape product page').item.json.json?.price || 'N/A' }}*\nYour target: ${{ $('Split into individual products').item.json.targetPrice }}\nProduct URL: {{ $('Split into individual products').item.json.url }}\n\nScraping cost: ${{ $('AlterLab — Scrape product page').item.json.billing?.cost }} ({{ $('AlterLab — Scrape product page').item.json.billing?.tier }} tier)",
+        "options": {}
+      },
+      "id": "d0e1f2a3-b4c5-6789-defa-890123456789",
+      "name": "Slack — Send price alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [1340, 240],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-credential",
+          "name": "Slack API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule — Daily at 9am": {
+      "main": [
+        [{"node": "Products to monitor", "type": "main", "index": 0}]
+      ]
+    },
+    "Products to monitor": {
+      "main": [
+        [{"node": "Split into individual products", "type": "main", "index": 0}]
+      ]
+    },
+    "Split into individual products": {
+      "main": [
+        [{"node": "AlterLab — Scrape product page", "type": "main", "index": 0}]
+      ]
+    },
+    "AlterLab — Scrape product page": {
+      "main": [
+        [{"node": "Price below threshold?", "type": "main", "index": 0}]
+      ]
+    },
+    "Price below threshold?": {
+      "main": [
+        [{"node": "Slack — Send price alert", "type": "main", "index": 0}],
+        []
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {"createdAt": "2026-06-29T00:00:00.000Z", "updatedAt": "2026-06-29T00:00:00.000Z", "id": "tag-price-monitoring", "name": "price monitoring"},
+    {"createdAt": "2026-06-29T00:00:00.000Z", "updatedAt": "2026-06-29T00:00:00.000Z", "id": "tag-e-commerce", "name": "e-commerce"},
+    {"createdAt": "2026-06-29T00:00:00.000Z", "updatedAt": "2026-06-29T00:00:00.000Z", "id": "tag-slack", "name": "Slack"}
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2026-06-29T00:00:00.000Z",
+  "versionId": "v1.0.0"
+}
