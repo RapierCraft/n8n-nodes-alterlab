@@ -43,8 +43,12 @@ export class AlterLabApi implements ICredentialType {
 
   test: ICredentialTestRequest = {
     request: {
-      baseURL: "={{$credentials.baseUrl}}",
-      url: "/api/v1/usage",
+      // Keep exactly one trailing slash so n8n resolves the relative URL as a
+      // path reference instead of replacing a self-hosted path prefix.
+      baseURL:
+        "={{($credentials.baseUrl || 'https://api.alterlab.io').replace(/\\/+$/, '') + '/'}}",
+      url:
+        "={{($credentials.baseUrl || 'https://api.alterlab.io').replace(/\\/+$/, '').endsWith('/api/v1') ? 'usage' : 'api/v1/usage'}}",
       method: "GET",
     },
   };
