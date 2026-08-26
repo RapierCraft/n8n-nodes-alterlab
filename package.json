@@ -34,6 +34,8 @@
     "build": "tsc && gulp build:icons",
     "dev": "tsc --watch",
     "lint": "tsc --noEmit",
+    "pretest": "npm run build",
+    "test": "node --test tests/AlterLab.node.test.js",
     "prepublishOnly": "npm run build"
   },
   "files": [

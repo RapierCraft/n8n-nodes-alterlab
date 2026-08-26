@@ -7,6 +7,11 @@ import type {
   JsonObject,
 } from "n8n-workflow";
 import { NodeApiError, NodeOperationError } from "n8n-workflow";
+import {
+  normalizeBaseUrl,
+  resolveApiUrl,
+  resolvePollUrl,
+} from "./url";
 
 const UTM = "utm_source=n8n&utm_medium=integration&utm_campaign=community_node";
 
@@ -1753,12 +1758,19 @@ export class AlterLab implements INodeType {
 
         // ── Detect credential type ────────────────────────
         let authName = "alterLabApi";
+        let credentials: unknown;
         try {
-          await this.getCredentials("alterLabOAuth2Api");
+          credentials = await this.getCredentials("alterLabOAuth2Api");
           authName = "alterLabOAuth2Api";
         } catch {
           // OAuth2 not configured, fall back to API key
+          credentials = await this.getCredentials("alterLabApi");
         }
+
+        const apiBaseUrl = normalizeBaseUrl(
+          (credentials as { baseUrl?: unknown }).baseUrl,
+        );
+        const apiUrl = (endpoint: string) => resolveApiUrl(apiBaseUrl, endpoint);
 
         // ══════════════════════════════════════════════════
         //  SESSION RESOURCE
@@ -1829,7 +1841,7 @@ export class AlterLab implements INodeType {
                 authName,
                 {
                   method: "POST",
-                  url: "/api/v1/sessions",
+                  url: apiUrl("/api/v1/sessions"),
                   body,
                   json: true,
                   returnFullResponse: true,
@@ -1869,7 +1881,7 @@ export class AlterLab implements INodeType {
                 authName,
                 {
                   method: "GET",
-                  url: "/api/v1/sessions",
+                  url: apiUrl("/api/v1/sessions"),
                   qs,
                   json: true,
                   returnFullResponse: true,
@@ -1911,7 +1923,7 @@ export class AlterLab implements INodeType {
                 authName,
                 {
                   method: "GET",
-                  url: `/api/v1/sessions/${sessionId}`,
+                  url: apiUrl(`/api/v1/sessions/${sessionId}`),
                   json: true,
                   returnFullResponse: true,
                   ignoreHttpStatusErrors: true,
@@ -1983,7 +1995,7 @@ export class AlterLab implements INodeType {
                 authName,
                 {
                   method: "PATCH",
-                  url: `/api/v1/sessions/${sessionId}`,
+                  url: apiUrl(`/api/v1/sessions/${sessionId}`),
                   body,
                   json: true,
                   returnFullResponse: true,
@@ -2012,7 +2024,7 @@ export class AlterLab implements INodeType {
                 authName,
                 {
                   method: "DELETE",
-                  url: `/api/v1/sessions/${sessionId}`,
+                  url: apiUrl(`/api/v1/sessions/${sessionId}`),
                   json: true,
                   returnFullResponse: true,
                   ignoreHttpStatusErrors: true,
@@ -2043,7 +2055,7 @@ export class AlterLab implements INodeType {
                 authName,
                 {
                   method: "POST",
-                  url: `/api/v1/sessions/${sessionId}/validate`,
+                  url: apiUrl(`/api/v1/sessions/${sessionId}/validate`),
                   json: true,
                   returnFullResponse: true,
                   ignoreHttpStatusErrors: true,
@@ -2123,7 +2135,7 @@ export class AlterLab implements INodeType {
                 authName,
                 {
                   method: "POST",
-                  url: `/api/v1/sessions/${sessionId}/refresh`,
+                  url: apiUrl(`/api/v1/sessions/${sessionId}/refresh`),
                   body,
                   json: true,
                   returnFullResponse: true,
@@ -2165,7 +2177,7 @@ export class AlterLab implements INodeType {
                 authName,
                 {
                   method: "GET",
-                  url: `/api/v1/crawl/${crawlId}`,
+                  url: apiUrl(`/api/v1/crawl/${crawlId}`),
                   json: true,
                   returnFullResponse: true,
                   ignoreHttpStatusErrors: true,
@@ -2193,7 +2205,7 @@ export class AlterLab implements INodeType {
                 authName,
                 {
                   method: "DELETE",
-                  url: `/api/v1/crawl/${crawlId}`,
+                  url: apiUrl(`/api/v1/crawl/${crawlId}`),
                   json: true,
                   returnFullResponse: true,
                   ignoreHttpStatusErrors: true,
@@ -2277,13 +2289,14 @@ export class AlterLab implements INodeType {
             if (Object.keys(advanced).length > 0) body.advanced = advanced;
 
             // Submit the crawl
+            const crawlRequestUrl = apiUrl("/api/v1/crawl");
             const startResponse =
               await this.helpers.httpRequestWithAuthentication.call(
                 this,
                 authName,
                 {
                   method: "POST",
-                  url: "/api/v1/crawl",
+                  url: crawlRequestUrl,
                   body,
                   json: true,
                   returnFullResponse: true,
@@ -2318,6 +2331,12 @@ export class AlterLab implements INodeType {
             let pollDelay = 2000;
             const maxPollDelay = 10000;
             let finalBody: Record<string, unknown> = startBody;
+            let crawlPollUrl = resolvePollUrl(
+              apiBaseUrl,
+              startResponse,
+              `/api/v1/crawl/${crawlId}`,
+              crawlRequestUrl,
+            );
 
             while (Date.now() - pollStart < pollTimeoutMs) {
               await new Promise<void>((resolve) => {
@@ -2331,13 +2350,19 @@ export class AlterLab implements INodeType {
                   authName,
                   {
                     method: "GET",
-                    url: `/api/v1/crawl/${crawlId}`,
+                    url: crawlPollUrl,
                     json: true,
                     returnFullResponse: true,
                     ignoreHttpStatusErrors: true,
                   },
                 );
 
+              crawlPollUrl = resolvePollUrl(
+                apiBaseUrl,
+                pollResponse,
+                crawlPollUrl,
+                crawlPollUrl,
+              );
               const pollStatus = (pollResponse as { statusCode: number })
                 .statusCode;
               const pollBody = (
@@ -2424,13 +2449,14 @@ export class AlterLab implements INodeType {
             }
           }
 
+          const searchRequestUrl = apiUrl("/api/v1/search");
           const response =
             await this.helpers.httpRequestWithAuthentication.call(
               this,
               authName,
               {
                 method: "POST",
-                url: "/api/v1/search",
+                url: searchRequestUrl,
                 body,
                 json: true,
                 returnFullResponse: true,
@@ -2458,6 +2484,12 @@ export class AlterLab implements INodeType {
               const maxSearchPollMs = 120_000; // 2 min max
 
               let finalData = data;
+              let searchPollUrl = resolvePollUrl(
+                apiBaseUrl,
+                response,
+                `/api/v1/search/${searchId}`,
+                searchRequestUrl,
+              );
               while (Date.now() - searchPollStart < maxSearchPollMs) {
                 await new Promise<void>((resolve) => {
                   setTimeout(resolve, searchPollDelay);
@@ -2473,12 +2505,19 @@ export class AlterLab implements INodeType {
                     authName,
                     {
                       method: "GET",
-                      url: `/api/v1/search/${searchId}`,
+                      url: searchPollUrl,
                       json: true,
                       returnFullResponse: true,
                       ignoreHttpStatusErrors: true,
                     },
                   );
+
+                searchPollUrl = resolvePollUrl(
+                  apiBaseUrl,
+                  pollResp,
+                  searchPollUrl,
+                  searchPollUrl,
+                );
 
                 const pollStatus = (pollResp as { statusCode: number })
                   .statusCode;
@@ -2551,7 +2590,7 @@ export class AlterLab implements INodeType {
               authName,
               {
                 method: "POST",
-                url: "/api/v1/map",
+                url: apiUrl("/api/v1/map"),
                 body,
                 json: true,
                 returnFullResponse: true,
@@ -2636,7 +2675,7 @@ export class AlterLab implements INodeType {
               authName,
               {
                 method: "POST",
-                url: "/api/v1/extract",
+                url: apiUrl("/api/v1/extract"),
                 body,
                 json: true,
                 returnFullResponse: true,
@@ -2715,13 +2754,14 @@ export class AlterLab implements INodeType {
           const body: Record<string, unknown> = { urls };
           if (opts.webhookUrl) body.webhook_url = opts.webhookUrl;
 
+          const batchRequestUrl = apiUrl("/api/v1/batch");
           const submitResponse =
             await this.helpers.httpRequestWithAuthentication.call(
               this,
               authName,
               {
                 method: "POST",
-                url: "/api/v1/batch",
+                url: batchRequestUrl,
                 body,
                 json: true,
                 returnFullResponse: true,
@@ -2753,6 +2793,12 @@ export class AlterLab implements INodeType {
           let batchDelay = 1000;
           const maxBatchDelay = 8000;
           let finalBatchBody: Record<string, unknown> = submitBody;
+          let batchPollUrl = resolvePollUrl(
+            apiBaseUrl,
+            submitResponse,
+            `/api/v1/batch/${batchId}`,
+            batchRequestUrl,
+          );
 
           while (Date.now() - batchPollStart < batchPollTimeoutMs) {
             await new Promise<void>((resolve) => {
@@ -2766,12 +2812,19 @@ export class AlterLab implements INodeType {
                 authName,
                 {
                   method: "GET",
-                  url: `/api/v1/batch/${batchId}`,
+                  url: batchPollUrl,
                   json: true,
                   returnFullResponse: true,
                   ignoreHttpStatusErrors: true,
                 },
               );
+
+            batchPollUrl = resolvePollUrl(
+              apiBaseUrl,
+              pollResponse,
+              batchPollUrl,
+              batchPollUrl,
+            );
 
             const pollStatus = (pollResponse as { statusCode: number })
               .statusCode;
@@ -2855,7 +2908,7 @@ export class AlterLab implements INodeType {
               authName,
               {
                 method: "POST",
-                url: "/api/v1/scrape/estimate",
+                url: apiUrl("/api/v1/scrape/estimate"),
                 body,
                 json: true,
                 returnFullResponse: true,
@@ -3095,12 +3148,13 @@ export class AlterLab implements INodeType {
         }
 
         // ── Make the API call ─────────────────────────────
+        const scrapeRequestUrl = apiUrl("/api/v1/scrape");
         let response = await this.helpers.httpRequestWithAuthentication.call(
           this,
           authName,
           {
             method: "POST",
-            url: "/api/v1/scrape",
+            url: scrapeRequestUrl,
             body,
             json: true,
             returnFullResponse: true,
@@ -3118,6 +3172,12 @@ export class AlterLab implements INodeType {
           const maxDelay = 5000;
           const maxPollTime = ((outputOptions.timeout ?? 90) + 30) * 1000; // timeout + 30s buffer
           const pollStart = Date.now();
+          let scrapePollUrl = resolvePollUrl(
+            apiBaseUrl,
+            response,
+            `/api/v1/jobs/${jobId}`,
+            scrapeRequestUrl,
+          );
 
           while (Date.now() - pollStart < maxPollTime) {
             await new Promise<void>((resolve) => setTimeout(resolve, delay));
@@ -3129,12 +3189,19 @@ export class AlterLab implements INodeType {
                 authName,
                 {
                   method: "GET",
-                  url: `/api/v1/jobs/${jobId}`,
+                  url: scrapePollUrl,
                   json: true,
                   returnFullResponse: true,
                   ignoreHttpStatusErrors: true,
                 },
               );
+
+            scrapePollUrl = resolvePollUrl(
+              apiBaseUrl,
+              pollResponse,
+              scrapePollUrl,
+              scrapePollUrl,
+            );
 
             const pollStatus = (pollResponse as { statusCode: number })
               .statusCode;
