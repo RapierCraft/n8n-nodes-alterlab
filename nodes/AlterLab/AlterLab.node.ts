@@ -29,6 +29,7 @@ import {
   buildCrawlBody,
   buildCrawlExportQuery,
   buildCrawlResumeBody,
+  formatBalanceResponse,
   mapBillingExtras,
   mapScrapeResponseExtras,
   parseCrawlExport,
@@ -48,7 +49,7 @@ export class AlterLab implements INodeType {
     group: ["transform"],
     version: 1,
     subtitle:
-      '={{$parameter["resource"] === "session" ? "session " + $parameter["sessionOperation"] : $parameter["resource"] === "crawl" ? "crawl " + $parameter["crawlOperation"] : $parameter["resource"] === "search" ? "search" : $parameter["resource"] === "map" ? "map" : $parameter["resource"] === "extract" ? "extract" : $parameter["resource"] === "batch" ? "batch scrape" : ($parameter["operation"] === "estimateCost" ? "cost estimate" : $parameter["mode"] + " scrape")}}',
+      '={{$parameter["resource"] === "account" ? "account " + $parameter["accountOperation"] : $parameter["resource"] === "session" ? "session " + $parameter["sessionOperation"] : $parameter["resource"] === "crawl" ? "crawl " + $parameter["crawlOperation"] : $parameter["resource"] === "search" ? "search" : $parameter["resource"] === "map" ? "map" : $parameter["resource"] === "extract" ? "extract" : $parameter["resource"] === "batch" ? "batch scrape" : ($parameter["operation"] === "estimateCost" ? "cost estimate" : $parameter["mode"] + " scrape")}}',
     description:
       "Scrape any website with anti-bot bypass, JS rendering, structured extraction, OCR, and more",
     defaults: {
@@ -63,7 +64,7 @@ export class AlterLab implements INodeType {
       },
       {
         name: "alterLabOAuth2Api",
-        displayName: "OAuth2 (Recommended)",
+        displayName: "OAuth2",
       },
     ],
     properties: [
@@ -75,6 +76,11 @@ export class AlterLab implements INodeType {
         noDataExpression: true,
         default: "scrape",
         options: [
+          {
+            name: "Account",
+            value: "account",
+            description: "Check your AlterLab account balance",
+          },
           {
             name: "Batch",
             value: "batch",
@@ -115,6 +121,32 @@ export class AlterLab implements INodeType {
           },
         ],
         description: "The resource to operate on",
+      },
+
+      // ══════════════════════════════════════════════════════
+      //  ACCOUNT RESOURCE
+      // ══════════════════════════════════════════════════════
+      {
+        displayName: "Operation",
+        name: "accountOperation",
+        type: "options",
+        noDataExpression: true,
+        default: "getBalance",
+        displayOptions: {
+          show: {
+            resource: ["account"],
+          },
+        },
+        options: [
+          {
+            name: "Get Balance",
+            value: "getBalance",
+            description:
+              "Get the current credit balance, tier and auto-recharge settings. Works with an API key or an OAuth2 credential.",
+            action: "Get account balance",
+          },
+        ],
+        description: "The operation to perform",
       },
 
       // ══════════════════════════════════════════════════════
@@ -2667,6 +2699,34 @@ export class AlterLab implements INodeType {
               [SOURCE_HEADER]: SOURCE_VALUE,
             },
           });
+
+        // ══════════════════════════════════════════════════
+        //  ACCOUNT RESOURCE
+        // ══════════════════════════════════════════════════
+        if (resource === "account") {
+          // GET /api/v1/billing/balance accepts X-API-Key, Bearer sk_ and
+          // OAuth (alo_at_) bearer credentials. It is read-only and free.
+          const response = await request(authName, {
+            method: "GET",
+            url: apiUrl("/api/v1/billing/balance"),
+            json: true,
+            returnFullResponse: true,
+            ignoreHttpStatusErrors: true,
+          });
+
+          const statusCode = (response as { statusCode: number }).statusCode;
+          const responseBody = (response as { body: Record<string, unknown> })
+            .body;
+
+          if (statusCode >= 400) {
+            handleApiError(this, statusCode, responseBody as JsonObject, i);
+          }
+
+          results.push({
+            json: formatBalanceResponse(responseBody) as IDataObject,
+          });
+          continue;
+        }
 
         // ══════════════════════════════════════════════════
         //  SESSION RESOURCE

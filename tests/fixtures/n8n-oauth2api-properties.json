@@ -1,0 +1,180 @@
+{
+  "source": "n8n-nodes-base@2.15.1 credentials/OAuth2Api.credentials.js (snapshot of the inherited oAuth2Api credential)",
+  "properties": [
+    {
+      "name": "useDynamicClientRegistration",
+      "type": "hidden",
+      "default": false
+    },
+    {
+      "name": "grantType",
+      "type": "options",
+      "displayOptions": {
+        "show": {
+          "useDynamicClientRegistration": [
+            false
+          ]
+        }
+      },
+      "default": "authorizationCode"
+    },
+    {
+      "name": "serverUrl",
+      "type": "string",
+      "displayOptions": {
+        "show": {
+          "useDynamicClientRegistration": [
+            true
+          ]
+        }
+      },
+      "required": true,
+      "default": ""
+    },
+    {
+      "name": "authUrl",
+      "type": "string",
+      "displayOptions": {
+        "show": {
+          "grantType": [
+            "authorizationCode",
+            "pkce"
+          ],
+          "useDynamicClientRegistration": [
+            false
+          ]
+        }
+      },
+      "required": true,
+      "default": ""
+    },
+    {
+      "name": "accessTokenUrl",
+      "type": "string",
+      "displayOptions": {
+        "show": {
+          "useDynamicClientRegistration": [
+            false
+          ]
+        }
+      },
+      "required": true,
+      "default": ""
+    },
+    {
+      "name": "clientId",
+      "type": "string",
+      "displayOptions": {
+        "show": {
+          "useDynamicClientRegistration": [
+            false
+          ]
+        }
+      },
+      "required": true,
+      "default": ""
+    },
+    {
+      "name": "clientSecret",
+      "type": "string",
+      "displayOptions": {
+        "show": {
+          "useDynamicClientRegistration": [
+            false
+          ]
+        }
+      },
+      "required": true,
+      "default": ""
+    },
+    {
+      "name": "scope",
+      "type": "string",
+      "displayOptions": {
+        "show": {
+          "useDynamicClientRegistration": [
+            false
+          ]
+        }
+      },
+      "default": ""
+    },
+    {
+      "name": "authQueryParameters",
+      "type": "string",
+      "displayOptions": {
+        "show": {
+          "grantType": [
+            "authorizationCode",
+            "pkce"
+          ],
+          "useDynamicClientRegistration": [
+            false
+          ]
+        }
+      },
+      "default": ""
+    },
+    {
+      "name": "authentication",
+      "type": "options",
+      "displayOptions": {
+        "show": {
+          "useDynamicClientRegistration": [
+            false
+          ]
+        }
+      },
+      "default": "header"
+    },
+    {
+      "name": "sendAdditionalBodyProperties",
+      "type": "boolean",
+      "displayOptions": {
+        "show": {
+          "grantType": [
+            "clientCredentials"
+          ],
+          "authentication": [
+            "body"
+          ],
+          "useDynamicClientRegistration": [
+            false
+          ]
+        }
+      },
+      "default": false
+    },
+    {
+      "name": "additionalBodyProperties",
+      "type": "json",
+      "displayOptions": {
+        "show": {
+          "grantType": [
+            "clientCredentials"
+          ],
+          "authentication": [
+            "body"
+          ],
+          "sendAdditionalBodyProperties": [
+            true
+          ],
+          "useDynamicClientRegistration": [
+            false
+          ]
+        }
+      },
+      "default": ""
+    },
+    {
+      "name": "ignoreSSLIssues",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "name": "tokenExpiredStatusCode",
+      "type": "number",
+      "default": 401
+    }
+  ]
+}
