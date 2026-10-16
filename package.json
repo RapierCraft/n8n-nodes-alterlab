@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-alterlab",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "n8n community node for AlterLab web scraping API — anti-bot bypass, JS rendering, structured extraction, OCR, and more.",
   "keywords": [
     "n8n-community-node-package",
@@ -35,7 +35,7 @@
     "dev": "tsc --watch",
     "lint": "tsc --noEmit",
     "pretest": "npm run build",
-    "test": "node --test tests/AlterLab.node.test.js tests/parity.test.js",
+    "test": "node --test tests/AlterLab.node.test.js tests/parity.test.js tests/oauth.test.js",
     "prepublishOnly": "npm run build"
   },
   "files": [

@@ -71,14 +71,42 @@ npm install n8n-nodes-alterlab
 
 ### Connect Your Account
 
-**Option A — One-click OAuth (recommended):**
-1. Add an AlterLab node to your workflow
-2. Click the credential dropdown → **Create New → AlterLab OAuth2 API**
-3. Click **Connect** → sign in → done. No API key copy-paste needed.
-
-**Option B — API key:**
+**Option A — API key (default, works everywhere):**
 1. [Sign up free](https://app.alterlab.io/signin?redirect=/dashboard/keys&source=n8n&utm_source=n8n&utm_medium=integration&utm_campaign=community_node) and copy your API key
 2. In n8n: **Credentials → New → AlterLab API** → paste key
+
+**Option B — OAuth2 (browser sign-in, no key to copy):**
+1. Add an AlterLab node and choose **Create New → AlterLab OAuth2 API**
+2. Click **Connect my account**, sign in to AlterLab and approve access
+
+That is the whole setup on n8n Cloud and on self-hosted n8n. The credential uses OAuth 2.0 **Authorization Code with PKCE** and **Dynamic Client Registration** (RFC 7591): n8n discovers AlterLab's endpoints from `https://api.alterlab.io/.well-known/oauth-authorization-server`, registers itself for *its own* callback URL and gets a public client ID. No client secret exists, so nothing secret ships in this package and no per-instance allowlist is needed.
+
+Requirements:
+- n8n 2.10 or newer (verified on 2.10.2), which has dynamic client registration built into its OAuth2 credential. Older n8n: use Option A or the manual registration below.
+- Your n8n must be reachable over **HTTPS** at its public URL (`WEBHOOK_URL` / `N8N_EDITOR_BASE_URL`); AlterLab only accepts `https://` redirect URIs for n8n-style (web) clients, so a plain `http://` callback is rejected.
+- Access tokens are short lived (1 hour) and n8n refreshes them automatically with the refresh token; reconnect only if you revoke access in AlterLab.
+
+#### Manual client registration (if you cannot use dynamic registration)
+
+In the credential, switch **Register Client Automatically** off, then register your n8n callback once. Your callback is shown in the credential as **OAuth Redirect URL** (`https://<your-n8n>/rest/oauth2-credential/callback`):
+
+```bash
+curl -sS -X POST https://api.alterlab.io/api/v1/oauth/register \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "client_name": "My n8n",
+    "redirect_uris": ["https://n8n.example.com/rest/oauth2-credential/callback"],
+    "token_endpoint_auth_method": "none",
+    "grant_types": ["authorization_code", "refresh_token"],
+    "scope": "scrape"
+  }'
+```
+
+Paste the returned `client_id` into **Client ID** and leave **Client Secret** empty (public PKCE client). Registration is limited to 5 requests per hour per IP address.
+
+Supported scopes are `scrape` (read and write, enough for every operation of this node), `read`, `write` and `billing`.
+
+> Do not put `https://api.alterlab.io/api/v1/oauth/authorize` into an *Authorization URL* field yourself: the AlterLab credential already sets the correct browser route (`https://alterlab.io/oauth/authorize`).
 
 ## Quick Start — Scrape a Page in 30 Seconds
 
@@ -229,6 +257,7 @@ Content type, custom headers, geo-targeting (`location.country` / `location.lang
 
 | Resource | Operations |
 |---|---|
+| **Account** | Get Balance (credits, tier, auto-recharge; works with an API key or OAuth2) |
 | **Scrape** | Scrape, Estimate Cost |
 | **Crawl** | Start (polls to completion), Get Status, Cancel, Resume, Export (JSON / JSONL / CSV, one item per page), List |
 | **Search** | Web search with engine (DuckDuckGo, Google, Bing), safe search, and optional result scraping |
@@ -241,7 +270,7 @@ Scrape output also includes `jobId`, `finalUrl`, `cachedAt` / `expiresAt` / `sta
 
 ### Credential Test
 
-The **Test** button calls `GET /api/v1/auth/identity`, which validates the API key without spending credits.
+The **Test** button calls `GET /api/v1/auth/identity`, which validates the API key or OAuth access token without spending credits.
 
 ## Frequently Asked Questions
 
@@ -263,7 +292,7 @@ Yes. AlterLab handles all major e-commerce anti-bot protection including Cloudfl
 
 ### Does AlterLab work with n8n Cloud and self-hosted n8n?
 
-Yes, both. Install via **Settings → Community Nodes** on n8n Cloud, or `npm install n8n-nodes-alterlab` for self-hosted. OAuth2 authentication works on both — click Connect, sign in, done.
+Yes, both. Install via **Settings → Community Nodes** on n8n Cloud, or `npm install n8n-nodes-alterlab` for self-hosted. OAuth2 authentication works on both (see *Connect Your Account* for the HTTPS callback requirement on self-hosted n8n).
 
 ### Is there rate limiting?
 
