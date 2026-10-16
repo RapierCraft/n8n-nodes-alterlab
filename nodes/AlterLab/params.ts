@@ -67,7 +67,7 @@ export function triState(value: unknown): boolean | undefined {
 export const SOURCE_HEADER = "X-AlterLab-Source";
 
 // Kept in sync with package.json "version" (enforced by a unit test).
-export const NODE_VERSION = "0.13.0";
+export const NODE_VERSION = "0.14.0";
 
 export const SOURCE_VALUE = `n8n-node/${NODE_VERSION}`;
 
@@ -256,6 +256,41 @@ export function mapScrapeResponseExtras(
       output[outKey] = data[apiKey];
     }
   }
+}
+
+// ── Account ───────────────────────────────────────────────────────────
+
+/** Flatten GET /api/v1/billing/balance into camelCase n8n output. */
+export function formatBalanceResponse(data: Dict): Dict {
+  const microcents = typeof data.balance_microcents === "number" ? data.balance_microcents : 0;
+  const tier = (data.tier ?? null) as Dict | null;
+  const autoRecharge = (data.auto_recharge ?? null) as Dict | null;
+  return {
+    balanceMicrocents: microcents,
+    // 1,000,000 microcents = $1.00; truncated like the API's display value.
+    balanceUsd: Math.floor(microcents / 10_000) / 100,
+    balanceDisplay: data.balance_display ?? null,
+    totalDepositedCents: data.total_deposited_cents ?? 0,
+    totalSpentCents: data.total_spent_cents ?? 0,
+    totalGrantedCents: data.total_granted_cents ?? 0,
+    tier: tier
+      ? {
+          name: tier.name ?? null,
+          slug: tier.slug ?? null,
+          requestsPerMinute: tier.requests_per_minute ?? null,
+          concurrentRequests: tier.concurrent_requests ?? null,
+          floorCents: tier.floor_cents ?? null,
+          atRisk: tier.at_risk ?? false,
+        }
+      : null,
+    autoRecharge: autoRecharge
+      ? {
+          enabled: autoRecharge.enabled ?? false,
+          thresholdDisplay: autoRecharge.threshold_display ?? null,
+          rechargeDisplay: autoRecharge.recharge_display ?? null,
+        }
+      : null,
+  };
 }
 
 /** Extend the flattened billing object with BYOP / BYOS / surcharge fields. */

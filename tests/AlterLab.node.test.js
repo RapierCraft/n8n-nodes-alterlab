@@ -89,7 +89,7 @@ test("credential test hits the X-API-Key compatible identity endpoint (#326)", (
   }
 });
 
-test("OAuth2 credential test uses the identity endpoint (token is an sk_ API key)", () => {
+test("OAuth2 credential test uses the identity endpoint (accepts OAuth bearer tokens)", () => {
   const {
     AlterLabOAuth2Api,
   } = require("../dist/credentials/AlterLabOAuth2Api.credentials.js");
