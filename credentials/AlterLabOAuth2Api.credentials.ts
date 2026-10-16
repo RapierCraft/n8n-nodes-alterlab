@@ -66,7 +66,7 @@ export class AlterLabOAuth2Api implements ICredentialType {
   test: ICredentialTestRequest = {
     request: {
       baseURL: "https://api.alterlab.io",
-      url: "/api/v1/usage",
+      url: "/api/v1/auth/identity",
       method: "GET",
     },
   };

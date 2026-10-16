@@ -47,8 +47,11 @@ export class AlterLabApi implements ICredentialType {
       // path reference instead of replacing a self-hosted path prefix.
       baseURL:
         "={{($credentials.baseUrl || 'https://api.alterlab.io').replace(/\\/+$/, '') + '/'}}",
+      // GET /api/v1/auth/identity verifies the X-API-Key without spending
+      // credits or touching usage/rate-limit state. (/api/v1/usage is
+      // JWT-only and always 401s for API keys — #326.)
       url:
-        "={{($credentials.baseUrl || 'https://api.alterlab.io').replace(/\\/+$/, '').endsWith('/api/v1') ? 'usage' : 'api/v1/usage'}}",
+        "={{($credentials.baseUrl || 'https://api.alterlab.io').replace(/\\/+$/, '').endsWith('/api/v1') ? 'auth/identity' : 'api/v1/auth/identity'}}",
       method: "GET",
     },
   };

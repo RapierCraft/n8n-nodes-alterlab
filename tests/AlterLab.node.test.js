@@ -63,32 +63,38 @@ function response(body = {}, statusCode = 200, extra = {}) {
 
 const api = DEFAULT_BASE_URL;
 
-test("credential test normalizes a slash before resolving usage", () => {
+function evalExpression(expression, credentials) {
+  assert.ok(expression.startsWith("={{") && expression.endsWith("}}"));
+  const source = expression.slice(3, -2);
+  return new Function("$credentials", `return (${source});`)(credentials);
+}
+
+test("credential test hits the X-API-Key compatible identity endpoint (#326)", () => {
   const request = new AlterLabApi().test.request;
-  assert.ok(request.baseURL.includes(".replace("));
-  assert.ok(request.baseURL.includes(" + '/'}}"));
-  assert.ok(request.url.includes(".replace("));
-  assert.ok(request.url.includes(".endsWith('/api/v1')"));
-  assert.ok(request.url.includes("? 'usage' : 'api/v1/usage'"));
+  assert.equal(request.method, "GET");
+  assert.ok(!request.url.includes("usage"), "must not use JWT-only /usage");
 
   const cases = [
-    [undefined, "https://api.alterlab.io/api/v1/usage"],
-    ["https://self.example/alterlab", "https://self.example/alterlab/api/v1/usage"],
-    ["https://self.example/alterlab/", "https://self.example/alterlab/api/v1/usage"],
-    ["https://self.example/alterlab/api/v1", "https://self.example/alterlab/api/v1/usage"],
-    ["https://self.example/alterlab/api/v1/", "https://self.example/alterlab/api/v1/usage"],
+    [undefined, "https://api.alterlab.io/api/v1/auth/identity"],
+    ["https://self.example/alterlab", "https://self.example/alterlab/api/v1/auth/identity"],
+    ["https://self.example/alterlab/", "https://self.example/alterlab/api/v1/auth/identity"],
+    ["https://self.example/alterlab/api/v1", "https://self.example/alterlab/api/v1/auth/identity"],
+    ["https://self.example/alterlab/api/v1/", "https://self.example/alterlab/api/v1/auth/identity"],
   ];
   for (const [baseUrl, expected] of cases) {
-    const input = baseUrl || "https://api.alterlab.io";
-    const withoutTrailingSlashes = input.replace(/\/+$/, "");
-    const normalizedBaseURL = `${withoutTrailingSlashes}/`;
-    const relativeUrl = withoutTrailingSlashes.endsWith("/api/v1")
-      ? "usage"
-      : "api/v1/usage";
-    const credentialTestUrl = new URL(relativeUrl, normalizedBaseURL).href;
-    assert.equal(credentialTestUrl, expected);
-    assert.equal(resolveApiUrl(baseUrl, "/api/v1/usage"), expected);
+    const credentials = { baseUrl };
+    const baseURL = evalExpression(request.baseURL, credentials);
+    const url = evalExpression(request.url, credentials);
+    assert.equal(new URL(url, baseURL).href, expected);
   }
+});
+
+test("OAuth2 credential test uses the identity endpoint (token is an sk_ API key)", () => {
+  const {
+    AlterLabOAuth2Api,
+  } = require("../dist/credentials/AlterLabOAuth2Api.credentials.js");
+  const request = new AlterLabOAuth2Api().test.request;
+  assert.equal(request.url, "/api/v1/auth/identity");
 });
 
 test("resolves default, prefixed, and /api/v1 base URLs", () => {

@@ -1,6 +1,7 @@
 import type {
   IDataObject,
   IExecuteFunctions,
+  IHttpRequestOptions,
   INodeExecutionData,
   INodeType,
   INodeTypeDescription,
@@ -12,6 +13,30 @@ import {
   resolveApiUrl,
   resolvePollUrl,
 } from "./url";
+import type {
+  CrawlResumeInput,
+  CrawlSettingsInput,
+  ScrapeAdvancedInput,
+  ScrapeExtrasInput,
+} from "./params";
+import {
+  ParamError,
+  SOURCE_HEADER,
+  SOURCE_VALUE,
+  applyBatchOptions,
+  applyScrapeAdvancedParity,
+  applyScrapeExtras,
+  buildCrawlBody,
+  buildCrawlExportQuery,
+  buildCrawlResumeBody,
+  mapBillingExtras,
+  mapScrapeResponseExtras,
+  parseCrawlExport,
+  parseJsonArrayParam,
+  parseJsonObjectParam,
+  splitList,
+  triState,
+} from "./params";
 
 const UTM = "utm_source=n8n&utm_medium=integration&utm_campaign=community_node";
 
@@ -253,10 +278,11 @@ export class AlterLab implements INodeType {
               { name: "JSON V2 (Section Tree)", value: "json_v2" },
               { name: "Markdown", value: "markdown" },
               { name: "RAG (Chunked)", value: "rag" },
+              { name: "Raw (Unmodified Body)", value: "raw" },
               { name: "Text", value: "text" },
             ],
             description:
-              "Output formats for content transformation. json_v2 returns a structured section tree. rag returns chunked content for vector ingestion. content returns body_markdown + content_hash for AI/KB pipelines.",
+              "Output formats for content transformation. raw returns the response body byte-for-byte. json_v2 returns a structured section tree. rag returns chunked content for vector ingestion. content returns body_markdown + content_hash for AI/KB pipelines.",
           },
           {
             displayName: "Include Raw HTML",
@@ -307,6 +333,14 @@ export class AlterLab implements INodeType {
             description: "Whether to enable response caching",
           },
           {
+            displayName: "Force Refresh",
+            name: "forceRefresh",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to bypass the cache and fetch fresh content even when Cache is enabled",
+          },
+          {
             displayName: "Cache TTL (Seconds)",
             name: "cacheTtl",
             type: "number",
@@ -342,6 +376,122 @@ export class AlterLab implements INodeType {
             default: false,
             description:
               "Whether to render JavaScript with a headless browser (forces Tier 4 minimum — no separate add-on charge)",
+          },
+          {
+            displayName: "Auto-Detect JavaScript",
+            name: "renderJsAuto",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to probe each page and only render JavaScript-heavy pages with a browser (render_js=auto). Ignored when Render JavaScript is enabled. Saves cost on mixed sites",
+          },
+          {
+            displayName: "Block Images",
+            name: "blockImages",
+            type: "options",
+            default: "default",
+            options: [
+              {
+                name: "Default (Per-Domain Playbook)",
+                value: "default",
+              },
+              { name: "Block Images", value: "true" },
+              { name: "Download Images", value: "false" },
+            ],
+            description:
+              "Skip image downloads during browser rendering to reduce proxy bandwidth. Screenshots and PDFs always download images",
+          },
+          {
+            displayName: "Skip TLS Verification",
+            name: "skipTlsVerification",
+            type: "options",
+            default: "default",
+            options: [
+              {
+                name: "Default (Verify, Fall Back If Site Certificate Is Invalid)",
+                value: "default",
+              },
+              { name: "Skip Verification", value: "true" },
+              { name: "Always Require Valid Certificate", value: "false" },
+            ],
+            description:
+              "How to treat the target site's TLS certificate. Default verifies and retries without verification when the site's own certificate is invalid",
+          },
+          {
+            displayName: "Include Iframes",
+            name: "includeIframes",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to inline iframe content into the main document (requires Render JavaScript)",
+          },
+          {
+            displayName: "Flatten Shadow DOM",
+            name: "flattenShadowDom",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to flatten Shadow DOM roots so web components are visible to extraction (requires Render JavaScript)",
+          },
+          {
+            displayName: "Scroll Count",
+            name: "scrollCount",
+            type: "number",
+            default: 3,
+            typeOptions: { minValue: 1, maxValue: 10 },
+            description: "Number of scroll iterations when Scroll To Load is enabled (1-10)",
+          },
+          {
+            displayName: "Browser Actions (JSON)",
+            name: "actions",
+            type: "json",
+            default: "",
+            placeholder:
+              '[{"type": "click", "selector": "#load-more"}, {"type": "wait", "milliseconds": 1000}]',
+            description:
+              "Array (max 20) of browser automation steps run after page load; requires Render JavaScript. Types: wait, wait_for, click, fill, press, scroll, infinite_scroll, screenshot, evaluate. Results are returned in actionResults",
+          },
+          {
+            displayName: "Session Headers (JSON)",
+            name: "sessionHeaders",
+            type: "json",
+            default: "",
+            placeholder: '{"Authorization": "Bearer ..."}',
+            description:
+              "Inline authentication headers for one-off authenticated scraping (not stored)",
+          },
+          {
+            displayName: "Use Own Proxy (BYOP)",
+            name: "useOwnProxy",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to route through your own integrated proxy instead of AlterLab's system proxy",
+          },
+          {
+            displayName: "Proxy Integration ID",
+            name: "proxyIntegrationId",
+            type: "string",
+            default: "",
+            description:
+              "Specific proxy integration to use (requires Use Own Proxy)",
+          },
+          {
+            displayName: "Sticky Session",
+            name: "stickySession",
+            type: "string",
+            default: "",
+            placeholder: "my-checkout-flow",
+            description:
+              "Handle (letters, digits, - and _, max 128) that reuses captured cookies and, best-effort, the same exit IP across separate scrapes. Requires a paid plan",
+          },
+          {
+            displayName: "Sticky Session TTL (Seconds)",
+            name: "stickySessionTtl",
+            type: "number",
+            default: 1800,
+            typeOptions: { minValue: 300, maxValue: 7200 },
+            description: "How long the sticky-session cookie jar is retained (300-7200)",
           },
           {
             displayName: "Screenshot",
@@ -520,6 +670,26 @@ export class AlterLab implements INodeType {
             description: "Pre-defined extraction profile for structured data",
           },
           {
+            displayName: "Extraction Template",
+            name: "extractionTemplate",
+            type: "options",
+            default: "",
+            options: [
+              { name: "None", value: "" },
+              { name: "Auto", value: "auto" },
+              { name: "Article", value: "article" },
+              { name: "Directory Listing", value: "directory_listing" },
+              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
+              { name: "Event", value: "event" },
+              { name: "FAQ", value: "faq" },
+              { name: "Job Posting", value: "job_posting" },
+              { name: "Product", value: "product" },
+              { name: "Recipe", value: "recipe" },
+            ],
+            description:
+              "Shorthand for Extraction Profile. Mutually exclusive with a non-Auto Extraction Profile",
+          },
+          {
             displayName: "Extraction Prompt",
             name: "extractionPrompt",
             type: "string",
@@ -633,6 +803,15 @@ export class AlterLab implements INodeType {
             description: "Maximum tier to escalate to",
           },
           {
+            displayName: "Time Budget (Seconds)",
+            name: "timeBudget",
+            type: "number",
+            default: 0,
+            typeOptions: { minValue: 0, maxValue: 300 },
+            description:
+              "Wall-clock budget for the whole tier-escalation sequence (5-300s, 0 = no limit). Escalation stops when the remaining budget is too small",
+          },
+          {
             displayName: "Prefer Cost",
             name: "preferCost",
             type: "boolean",
@@ -655,6 +834,194 @@ export class AlterLab implements INodeType {
             default: false,
             description:
               "Whether to return an error instead of escalating to expensive tiers",
+          },
+        ],
+      },
+
+      // ── Additional Request Options ───────────────────────
+      {
+        displayName: "Additional Options",
+        name: "scrapeExtras",
+        type: "collection",
+        placeholder: "Add Option",
+        default: {},
+        displayOptions: {
+          show: {
+            resource: ["scrape"],
+            operation: ["scrape"],
+          },
+        },
+        options: [
+          {
+            displayName: "Content Type",
+            name: "contentType",
+            type: "options",
+            default: "",
+            options: [
+              { name: "Default", value: "" },
+              { name: "application/json", value: "application/json" },
+              {
+                name: "application/x-www-form-urlencoded",
+                value: "application/x-www-form-urlencoded",
+              },
+              { name: "text/plain", value: "text/plain" },
+              { name: "application/graphql", value: "application/graphql" },
+            ],
+            description: "Content-Type for the POST request body",
+          },
+          {
+            displayName: "Custom Headers (JSON)",
+            name: "headers",
+            type: "json",
+            default: "",
+            placeholder: '{"Accept-Language": "de-DE"}',
+            description:
+              "Headers (max 50) sent to the target URL. Hop-by-hop headers such as Host and Connection are rejected by the API",
+          },
+          {
+            displayName: "Location Country",
+            name: "locationCountry",
+            type: "string",
+            default: "",
+            placeholder: "DE",
+            description:
+              "ISO 3166-1 alpha-2 country to geo-target (proxy exit and locale)",
+          },
+          {
+            displayName: "Location Language",
+            name: "locationLanguage",
+            type: "string",
+            default: "",
+            placeholder: "de",
+            description:
+              "ISO 639-1 language for the Accept-Language header and browser locale",
+          },
+          {
+            displayName: "Wait For (CSS Selector)",
+            name: "waitFor",
+            type: "string",
+            default: "",
+            placeholder: "#results",
+            description: "CSS selector to wait for before capturing the page",
+          },
+          {
+            displayName: "Filter Content",
+            name: "filterContent",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to apply quality filtering to extracted content (default is lossless)",
+          },
+          {
+            displayName: "Enable Scroll",
+            name: "enableScroll",
+            type: "options",
+            default: "default",
+            options: [
+              { name: "Auto", value: "default" },
+              { name: "Always Scroll", value: "true" },
+              { name: "Never Scroll", value: "false" },
+            ],
+            description: "Force scrolling for lazy-loaded images on or off",
+          },
+          {
+            displayName: "PDF Format",
+            name: "pdfFormat",
+            type: "options",
+            default: "markdown",
+            options: [
+              { name: "Markdown", value: "markdown" },
+              { name: "Text", value: "text" },
+            ],
+            description: "Output format when scraping PDFs",
+          },
+          {
+            displayName: "OCR Language",
+            name: "ocrLanguage",
+            type: "string",
+            default: "eng",
+            description: "Tesseract language code for OCR mode",
+          },
+          {
+            displayName: "Webhook URL",
+            name: "webhookUrl",
+            type: "string",
+            default: "",
+            placeholder: "https://your-server.com/webhook",
+            description:
+              "Receive job.completed / job.failed events for this request (HTTPS required)",
+          },
+          {
+            displayName: "Sync Policy",
+            name: "syncPolicy",
+            type: "options",
+            default: "auto",
+            options: [
+              {
+                name: "Auto",
+                value: "auto",
+                description: "Return early with a job ID for predicted slow T3/T4 jobs",
+              },
+              {
+                name: "Wait Until Deadline",
+                value: "wait_until_deadline",
+                description:
+                  "Keep the connection open until the result or the sync deadline",
+              },
+            ],
+            description: "How long the API holds the request open in synchronous mode",
+          },
+          {
+            displayName: "Submit Async (Return Job ID)",
+            name: "asyncSubmit",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to submit with sync=false and return the job ID and poll URL immediately instead of waiting for the result. Pair with a Webhook URL",
+          },
+          {
+            displayName: "Generate Embeddings",
+            name: "embeddingsEnabled",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to chunk and embed the scraped text with OpenAI models (+$0.001 per page)",
+          },
+          {
+            displayName: "Embeddings Model",
+            name: "embeddingsModel",
+            type: "options",
+            default: "text-embedding-3-small",
+            options: [
+              {
+                name: "text-embedding-3-small",
+                value: "text-embedding-3-small",
+              },
+              {
+                name: "text-embedding-3-large",
+                value: "text-embedding-3-large",
+              },
+            ],
+            displayOptions: { show: { embeddingsEnabled: [true] } },
+            description: "Embedding model",
+          },
+          {
+            displayName: "Embeddings Chunk Size",
+            name: "embeddingsChunkSize",
+            type: "number",
+            default: 512,
+            typeOptions: { minValue: 64, maxValue: 8191 },
+            displayOptions: { show: { embeddingsEnabled: [true] } },
+            description: "Target chunk size in tokens (64-8191)",
+          },
+          {
+            displayName: "Embeddings Chunk Overlap",
+            name: "embeddingsChunkOverlap",
+            type: "number",
+            default: 50,
+            typeOptions: { minValue: 0, maxValue: 2048 },
+            displayOptions: { show: { embeddingsEnabled: [true] } },
+            description: "Overlap between chunks in tokens (must be less than the chunk size)",
           },
         ],
       },
@@ -694,6 +1061,26 @@ export class AlterLab implements INodeType {
             description: "Cancel a running crawl and refund unused credits",
             action: "Cancel a crawl",
           },
+          {
+            name: "Resume",
+            value: "resume",
+            description:
+              "Retry failed (and optionally cancelled) pages of a crawl and add extra URLs",
+            action: "Resume a crawl",
+          },
+          {
+            name: "Export",
+            value: "export",
+            description:
+              "Export crawl results as JSON, JSONL, or CSV (one n8n item per page)",
+            action: "Export crawl results",
+          },
+          {
+            name: "List",
+            value: "list",
+            description: "List your crawls (active and historical)",
+            action: "List crawls",
+          },
         ],
         description: "The crawl operation to perform",
       },
@@ -710,7 +1097,7 @@ export class AlterLab implements INodeType {
         displayOptions: {
           show: {
             resource: ["crawl"],
-            crawlOperation: ["status", "cancel"],
+            crawlOperation: ["status", "cancel", "resume", "export"],
           },
         },
       },
@@ -730,6 +1117,146 @@ export class AlterLab implements INodeType {
             crawlOperation: ["start"],
           },
         },
+      },
+
+      // ── Crawl Resume options ─────────────────────────────
+      {
+        displayName: "Resume Options",
+        name: "crawlResumeOptions",
+        type: "collection",
+        placeholder: "Add Option",
+        default: {},
+        displayOptions: {
+          show: { resource: ["crawl"], crawlOperation: ["resume"] },
+        },
+        options: [
+          {
+            displayName: "Retry Failed Pages",
+            name: "retryFailed",
+            type: "boolean",
+            default: true,
+            description: "Whether to retry pages that ended in failed status",
+          },
+          {
+            displayName: "Also Retry Cancelled Pages",
+            name: "retryCancelled",
+            type: "boolean",
+            default: false,
+            description: "Whether to retry pages that were cancelled",
+          },
+          {
+            displayName: "Additional URLs",
+            name: "additionalUrls",
+            type: "string",
+            default: "",
+            placeholder: "https://example.com/a, https://example.com/b",
+            description: "Comma-separated extra URLs to add to the crawl (max 1000)",
+          },
+        ],
+      },
+
+      // ── Crawl Export options ─────────────────────────────
+      {
+        displayName: "Export Options",
+        name: "crawlExportOptions",
+        type: "collection",
+        placeholder: "Add Option",
+        default: {},
+        displayOptions: {
+          show: { resource: ["crawl"], crawlOperation: ["export"] },
+        },
+        options: [
+          {
+            displayName: "Format",
+            name: "format",
+            type: "options",
+            default: "json",
+            options: [
+              { name: "JSON", value: "json" },
+              { name: "JSONL (Newline-Delimited)", value: "jsonl" },
+              { name: "CSV", value: "csv" },
+            ],
+            description: "Export file format; the node parses it into one item per page",
+          },
+          {
+            displayName: "Page Status Filter",
+            name: "status",
+            type: "options",
+            default: "succeeded",
+            options: [
+              { name: "Succeeded", value: "succeeded" },
+              { name: "Failed", value: "failed" },
+              { name: "Rejected", value: "rejected" },
+              { name: "Expired", value: "expired" },
+              { name: "Queued", value: "queued" },
+              { name: "Processing", value: "processing" },
+              { name: "Cancelled", value: "cancelled" },
+              { name: "All", value: "all" },
+            ],
+            description: "Only export pages with this status",
+          },
+          {
+            displayName: "Fields",
+            name: "fields",
+            type: "string",
+            default: "",
+            placeholder: "url,status,content",
+            description: "Comma-separated fields to include (empty = all)",
+          },
+        ],
+      },
+
+      // ── Crawl List options ───────────────────────────────
+      {
+        displayName: "List Filters",
+        name: "crawlListFilters",
+        type: "collection",
+        placeholder: "Add Filter",
+        default: {},
+        displayOptions: {
+          show: { resource: ["crawl"], crawlOperation: ["list"] },
+        },
+        options: [
+          {
+            displayName: "Limit",
+            name: "limit",
+            type: "number",
+            default: 20,
+            typeOptions: { minValue: 1, maxValue: 100 },
+            description: "Max crawls to return (1-100)",
+          },
+          {
+            displayName: "Offset",
+            name: "offset",
+            type: "number",
+            default: 0,
+            typeOptions: { minValue: 0 },
+            description: "Number of crawls to skip",
+          },
+          {
+            displayName: "Status",
+            name: "status",
+            type: "options",
+            default: "",
+            options: [
+              { name: "Any", value: "" },
+              { name: "Discovering", value: "discovering" },
+              { name: "Scraping", value: "scraping" },
+              { name: "Completed", value: "completed" },
+              { name: "Partial", value: "partial" },
+              { name: "Failed", value: "failed" },
+              { name: "Cancelled", value: "cancelled" },
+            ],
+            description: "Filter by crawl status",
+          },
+          {
+            displayName: "Domain",
+            name: "domain",
+            type: "string",
+            default: "",
+            description: "Filter by domain substring",
+          },
+        ],
       },
 
       // ── Crawl Settings ───────────────────────────────────
@@ -774,6 +1301,7 @@ export class AlterLab implements INodeType {
               { name: "JSON", value: "json" },
               { name: "JSON V2 (Section Tree)", value: "json_v2" },
               { name: "Markdown", value: "markdown" },
+              { name: "RAG (Chunked)", value: "rag" },
               { name: "Text", value: "text" },
             ],
             description: "Output formats for each scraped page",
@@ -879,6 +1407,251 @@ export class AlterLab implements INodeType {
             description: "Timeout per page in seconds",
           },
           {
+            displayName: "Sitemap Path",
+            name: "sitemapPath",
+            type: "string",
+            default: "",
+            placeholder: "/product-sitemap.xml",
+            description: "Custom sitemap path (must start with /)",
+          },
+          {
+            displayName: "Per-Path Page Budget (JSON)",
+            name: "budget",
+            type: "json",
+            default: "",
+            placeholder: '{"/products/*": 100, "/blog/*": 50, "*": 5}',
+            description:
+              "Max pages per URL path glob; the longest matching pattern wins and * is the catch-all",
+          },
+          {
+            displayName: "Priority (JSON)",
+            name: "priority",
+            type: "json",
+            default: "",
+            placeholder: '{"keywords": ["pricing"], "boost": ["/docs/*"], "demote": ["/tag/*"]}',
+            description:
+              "Content-aware URL prioritisation: keywords, boost and demote patterns",
+          },
+          {
+            displayName: "Custom Headers (JSON)",
+            name: "headers",
+            type: "json",
+            default: "",
+            placeholder: '{"Authorization": "Bearer ..."}',
+            description: "Headers (max 50) injected into every page request",
+          },
+          {
+            displayName: "Auto Extraction",
+            name: "extractionAuto",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to auto-detect the page type and extract structured data without a schema (extraction=auto). Mutually exclusive with Extraction Schema",
+          },
+          {
+            displayName: "Extraction Schema (JSON)",
+            name: "extractionSchema",
+            type: "json",
+            default: "",
+            description: "JSON schema for structured extraction on each page",
+          },
+          {
+            displayName: "Extraction Profile",
+            name: "extractionProfile",
+            type: "options",
+            default: "",
+            options: [
+              { name: "None", value: "" },
+              { name: "Auto", value: "auto" },
+              { name: "Article", value: "article" },
+              { name: "Directory Listing", value: "directory_listing" },
+              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
+              { name: "Event", value: "event" },
+              { name: "FAQ", value: "faq" },
+              { name: "Job Posting", value: "job_posting" },
+              { name: "Product", value: "product" },
+              { name: "Recipe", value: "recipe" },
+            ],
+            description: "Pre-defined extraction profile for each page",
+          },
+          {
+            displayName: "Extraction Template",
+            name: "extractionTemplate",
+            type: "options",
+            default: "",
+            options: [
+              { name: "None", value: "" },
+              { name: "Auto", value: "auto" },
+              { name: "Article", value: "article" },
+              { name: "Directory Listing", value: "directory_listing" },
+              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
+              { name: "Event", value: "event" },
+              { name: "FAQ", value: "faq" },
+              { name: "Job Posting", value: "job_posting" },
+              { name: "Product", value: "product" },
+              { name: "Recipe", value: "recipe" },
+            ],
+            description:
+              "Shorthand for Extraction Profile (mutually exclusive with it)",
+          },
+          {
+            displayName: "Respect Robots.txt",
+            name: "respectRobots",
+            type: "boolean",
+            default: true,
+            description: "Whether to respect robots.txt rules for the target domain",
+          },
+          {
+            displayName: "Include Subdomains",
+            name: "includeSubdomains",
+            type: "boolean",
+            default: false,
+            description: "Whether to follow links to subdomains",
+          },
+          {
+            displayName: "Change Tracking (JSON)",
+            name: "changeTracking",
+            type: "json",
+            default: "",
+            placeholder: '{"enabled": true, "tracking_id": "weekly-docs"}',
+            description:
+              "Detect new, changed, unchanged and removed pages versus the previous crawl with the same tracking_id",
+          },
+          {
+            displayName: "Webhook URL",
+            name: "webhookUrl",
+            type: "string",
+            default: "",
+            description: "Notified once when the crawl finishes (legacy; prefer Webhook Config)",
+          },
+          {
+            displayName: "Webhook Config (JSON)",
+            name: "webhook",
+            type: "json",
+            default: "",
+            placeholder: '{"url": "https://example.com/hook", "events": ["crawl.completed"], "secret": "..."}',
+            description:
+              "Real-time event delivery with event filtering, HMAC signing and metadata. Takes precedence over Webhook URL",
+          },
+          {
+            displayName: "Screenshot Every Page",
+            name: "screenshot",
+            type: "boolean",
+            default: false,
+            description: "Whether to capture a screenshot of every crawled page",
+          },
+          {
+            displayName: "Wait For (CSS Selector)",
+            name: "waitFor",
+            type: "string",
+            default: "",
+            description: "CSS selector to wait for on each page",
+          },
+          {
+            displayName: "Depth Strategy",
+            name: "depthStrategy",
+            type: "options",
+            default: "sequential",
+            options: [
+              {
+                name: "Sequential",
+                value: "sequential",
+                description: "Finish each depth before starting the next (deterministic)",
+              },
+              {
+                name: "Eager",
+                value: "eager",
+                description: "Start the next depth as soon as any job finishes (faster)",
+              },
+            ],
+            description: "How crawl depth levels are scheduled",
+          },
+          {
+            displayName: "Max Spend",
+            name: "maxCredits",
+            type: "number",
+            default: 0,
+            typeOptions: { minValue: 0 },
+            description: "Maximum total credits to spend on the crawl (0 = no limit)",
+          },
+          {
+            displayName: "Max Tier",
+            name: "maxTier",
+            type: "options",
+            default: "",
+            options: [
+              { name: "None", value: "" },
+              { name: "T1 Curl", value: "1" },
+              { name: "T2 HTTP", value: "2" },
+              { name: "T3 Stealth", value: "3" },
+              { name: "T3.5 Light JS", value: "3.5" },
+              { name: "T4 Browser", value: "4" },
+            ],
+            description:
+              "Highest tier used for page scrapes (cannot be combined with Render JavaScript = Yes below T4)",
+          },
+          {
+            displayName: "Force Tier",
+            name: "forceTier",
+            type: "options",
+            default: "",
+            options: [
+              { name: "None", value: "" },
+              { name: "T1 Curl", value: "1" },
+              { name: "T2 HTTP", value: "2" },
+              { name: "T3 Stealth", value: "3" },
+              { name: "T3.5 Light JS", value: "3.5" },
+              { name: "T4 Browser", value: "4" },
+            ],
+            description: "Force a specific tier for every page (skips escalation)",
+          },
+          {
+            displayName: "Output Connector (JSON)",
+            name: "output",
+            type: "json",
+            default: "",
+            placeholder: '{"type": "s3", "bucket": "my-bucket", "credentials": {...}}',
+            description:
+              "Deliver results to s3, gcs or a streaming webhook as pages complete (type: s3 | gcs | webhook_stream)",
+          },
+          {
+            displayName: "Storage Backend",
+            name: "storage",
+            type: "options",
+            default: "redis",
+            options: [
+              { name: "Redis (Inline, 2h)", value: "redis" },
+              { name: "S3", value: "s3" },
+              { name: "R2", value: "r2" },
+            ],
+            description:
+              "Where results are stored. s3/r2 return a presigned download URL (30-day retention)",
+          },
+          {
+            displayName: "Cache",
+            name: "cache",
+            type: "boolean",
+            default: false,
+            description: "Whether per-URL results may be served from cache",
+          },
+          {
+            displayName: "Cache TTL (Seconds)",
+            name: "cacheTtl",
+            type: "number",
+            default: 3600,
+            typeOptions: { minValue: 60, maxValue: 86400 },
+            displayOptions: { show: { cache: [true] } },
+            description: "Cache time-to-live in seconds (60-86400)",
+          },
+          {
+            displayName: "Force Refresh",
+            name: "forceRefresh",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to bypass and invalidate cached entries (use with Cache)",
+          },
+          {
             displayName: "Wait For Poll (Seconds)",
             name: "pollTimeout",
             type: "number",
@@ -945,6 +1718,26 @@ export class AlterLab implements INodeType {
           },
         },
         options: [
+          {
+            displayName: "Engine",
+            name: "engine",
+            type: "options",
+            default: "duckduckgo",
+            options: [
+              { name: "DuckDuckGo (Fast, Cheapest)", value: "duckduckgo" },
+              { name: "Google (Browser Tier)", value: "google" },
+              { name: "Bing (Browser Tier)", value: "bing" },
+            ],
+            description:
+              "Search engine. Google and Bing render in a browser and return richer results (featured snippets, People Also Ask) at a higher price",
+          },
+          {
+            displayName: "Safe Search",
+            name: "safeSearch",
+            type: "boolean",
+            default: true,
+            description: "Whether to filter adult content from results",
+          },
           {
             displayName: "Number of Results",
             name: "numResults",
@@ -1016,9 +1809,12 @@ export class AlterLab implements INodeType {
             type: "multiOptions",
             default: ["markdown"],
             options: [
+              { name: "Content (AI/KB)", value: "content" },
               { name: "HTML", value: "html" },
               { name: "JSON", value: "json" },
+              { name: "JSON V2 (Section Tree)", value: "json_v2" },
               { name: "Markdown", value: "markdown" },
+              { name: "RAG (Chunked)", value: "rag" },
               { name: "Text", value: "text" },
             ],
             description: "Output formats when Scrape Results is enabled",
@@ -1233,11 +2029,13 @@ export class AlterLab implements INodeType {
             type: "multiOptions",
             default: ["json"],
             options: [
+              { name: "Content (AI/KB)", value: "content" },
               { name: "HTML", value: "html" },
               { name: "JSON", value: "json" },
               { name: "JSON V2 (Section Tree)", value: "json_v2" },
               { name: "Markdown", value: "markdown" },
               { name: "RAG (Chunked)", value: "rag" },
+              { name: "Raw (Unmodified Body)", value: "raw" },
               { name: "Text", value: "text" },
             ],
             description: "Output formats for content transformation",
@@ -1384,6 +2182,57 @@ export class AlterLab implements INodeType {
       // ══════════════════════════════════════════════════════
 
       {
+        displayName: "Operation",
+        name: "batchOperation",
+        type: "options",
+        noDataExpression: true,
+        default: "submit",
+        displayOptions: { show: { resource: ["batch"] } },
+        options: [
+          {
+            name: "Submit",
+            value: "submit",
+            description: "Submit up to 100 URLs for parallel scraping",
+            action: "Submit a batch scrape",
+          },
+          {
+            name: "List",
+            value: "list",
+            description: "List your batch scrape history",
+            action: "List batches",
+          },
+        ],
+        description: "The batch operation to perform",
+      },
+
+      {
+        displayName: "List Filters",
+        name: "batchListFilters",
+        type: "collection",
+        placeholder: "Add Filter",
+        default: {},
+        displayOptions: { show: { resource: ["batch"], batchOperation: ["list"] } },
+        options: [
+          {
+            displayName: "Limit",
+            name: "limit",
+            type: "number",
+            default: 20,
+            typeOptions: { minValue: 1, maxValue: 50 },
+            description: "Max batches to return (1-50)",
+          },
+          {
+            displayName: "Offset",
+            name: "offset",
+            type: "number",
+            default: 0,
+            typeOptions: { minValue: 0 },
+            description: "Number of batches to skip",
+          },
+        ],
+      },
+
+      {
         displayName: "URLs (JSON Array)",
         name: "batchUrls",
         type: "json",
@@ -1396,6 +2245,7 @@ export class AlterLab implements INodeType {
         displayOptions: {
           show: {
             resource: ["batch"],
+            batchOperation: ["submit"],
           },
         },
       },
@@ -1409,9 +2259,45 @@ export class AlterLab implements INodeType {
         displayOptions: {
           show: {
             resource: ["batch"],
+            batchOperation: ["submit"],
           },
         },
         options: [
+          {
+            displayName: "BYOS Session ID",
+            name: "sessionId",
+            type: "string",
+            default: "",
+            description:
+              "Stored session applied to every URL in the batch (all URLs must match the session's domain)",
+          },
+          {
+            displayName: "Export Storage Integration ID",
+            name: "exportIntegrationId",
+            type: "string",
+            default: "",
+            description:
+              "Upload results to this storage integration (UUID) when the batch completes",
+          },
+          {
+            displayName: "Export Key Prefix",
+            name: "exportPrefix",
+            type: "string",
+            default: "",
+            description: "Key prefix override for the export (uses the integration default if empty)",
+          },
+          {
+            displayName: "Export Format",
+            name: "exportFormat",
+            type: "options",
+            default: "jsonl",
+            options: [
+              { name: "JSONL", value: "jsonl" },
+              { name: "CSV", value: "csv" },
+              { name: "JSON", value: "json" },
+            ],
+            description: "Export file format",
+          },
           {
             displayName: "Webhook URL",
             name: "webhookUrl",
@@ -1772,6 +2658,16 @@ export class AlterLab implements INodeType {
         );
         const apiUrl = (endpoint: string) => resolveApiUrl(apiBaseUrl, endpoint);
 
+        // Every API request identifies itself as n8n ecosystem traffic (#55).
+        const request = (auth: string, options: IHttpRequestOptions) =>
+          this.helpers.httpRequestWithAuthentication.call(this, auth, {
+            ...options,
+            headers: {
+              ...(options.headers ?? {}),
+              [SOURCE_HEADER]: SOURCE_VALUE,
+            },
+          });
+
         // ══════════════════════════════════════════════════
         //  SESSION RESOURCE
         // ══════════════════════════════════════════════════
@@ -1836,10 +2732,7 @@ export class AlterLab implements INodeType {
             if (extra.expiresAt) body.expires_at = extra.expiresAt;
 
             const response =
-              await this.helpers.httpRequestWithAuthentication.call(
-                this,
-                authName,
-                {
+              await request(authName, {
                   method: "POST",
                   url: apiUrl("/api/v1/sessions"),
                   body,
@@ -1876,10 +2769,7 @@ export class AlterLab implements INodeType {
             if (filters.status) qs.status = filters.status;
 
             const response =
-              await this.helpers.httpRequestWithAuthentication.call(
-                this,
-                authName,
-                {
+              await request(authName, {
                   method: "GET",
                   url: apiUrl("/api/v1/sessions"),
                   qs,
@@ -1918,10 +2808,7 @@ export class AlterLab implements INodeType {
             const sessionId = this.getNodeParameter("sessionId", i) as string;
 
             const response =
-              await this.helpers.httpRequestWithAuthentication.call(
-                this,
-                authName,
-                {
+              await request(authName, {
                   method: "GET",
                   url: apiUrl(`/api/v1/sessions/${sessionId}`),
                   json: true,
@@ -1990,10 +2877,7 @@ export class AlterLab implements INodeType {
             }
 
             const response =
-              await this.helpers.httpRequestWithAuthentication.call(
-                this,
-                authName,
-                {
+              await request(authName, {
                   method: "PATCH",
                   url: apiUrl(`/api/v1/sessions/${sessionId}`),
                   body,
@@ -2019,10 +2903,7 @@ export class AlterLab implements INodeType {
             const sessionId = this.getNodeParameter("sessionId", i) as string;
 
             const response =
-              await this.helpers.httpRequestWithAuthentication.call(
-                this,
-                authName,
-                {
+              await request(authName, {
                   method: "DELETE",
                   url: apiUrl(`/api/v1/sessions/${sessionId}`),
                   json: true,
@@ -2050,10 +2931,7 @@ export class AlterLab implements INodeType {
             const sessionId = this.getNodeParameter("sessionId", i) as string;
 
             const response =
-              await this.helpers.httpRequestWithAuthentication.call(
-                this,
-                authName,
-                {
+              await request(authName, {
                   method: "POST",
                   url: apiUrl(`/api/v1/sessions/${sessionId}/validate`),
                   json: true,
@@ -2130,10 +3008,7 @@ export class AlterLab implements INodeType {
             }
 
             const response =
-              await this.helpers.httpRequestWithAuthentication.call(
-                this,
-                authName,
-                {
+              await request(authName, {
                   method: "POST",
                   url: apiUrl(`/api/v1/sessions/${sessionId}/refresh`),
                   body,
@@ -2172,10 +3047,7 @@ export class AlterLab implements INodeType {
             const crawlId = this.getNodeParameter("crawlId", i) as string;
 
             const response =
-              await this.helpers.httpRequestWithAuthentication.call(
-                this,
-                authName,
-                {
+              await request(authName, {
                   method: "GET",
                   url: apiUrl(`/api/v1/crawl/${crawlId}`),
                   json: true,
@@ -2200,10 +3072,7 @@ export class AlterLab implements INodeType {
             const crawlId = this.getNodeParameter("crawlId", i) as string;
 
             const response =
-              await this.helpers.httpRequestWithAuthentication.call(
-                this,
-                authName,
-                {
+              await request(authName, {
                   method: "DELETE",
                   url: apiUrl(`/api/v1/crawl/${crawlId}`),
                   json: true,
@@ -2226,75 +3095,18 @@ export class AlterLab implements INodeType {
 
           if (crawlOp === "start") {
             const crawlUrl = this.getNodeParameter("crawlUrl", i) as string;
-            const settings = this.getNodeParameter("crawlSettings", i, {}) as {
-              maxPages?: number;
-              maxDepth?: number;
-              formats?: string[];
-              includePatterns?: string;
-              excludePatterns?: string;
-              sitemap?: string;
-              renderJs?: string;
-              useProxy?: boolean;
-              maxConcurrency?: number;
-              delay?: number;
-              timeout?: number;
-              pollTimeout?: number;
-              extractionModel?: string;
-              extractionProvider?: string;
-            };
+            const settings = this.getNodeParameter(
+              "crawlSettings",
+              i,
+              {},
+            ) as CrawlSettingsInput & { pollTimeout?: number };
 
-            const body: Record<string, unknown> = { url: crawlUrl };
-
-            if (settings.maxPages && settings.maxPages !== 50)
-              body.max_pages = settings.maxPages;
-            if (settings.maxDepth !== undefined && settings.maxDepth !== 3)
-              body.max_depth = settings.maxDepth;
-            if (settings.formats?.length) body.formats = settings.formats;
-            if (settings.includePatterns) {
-              body.include_patterns = settings.includePatterns
-                .split(",")
-                .map((p) => p.trim())
-                .filter(Boolean);
-            }
-            if (settings.excludePatterns) {
-              body.exclude_patterns = settings.excludePatterns
-                .split(",")
-                .map((p) => p.trim())
-                .filter(Boolean);
-            }
-            if (settings.sitemap && settings.sitemap !== "include") {
-              body.sitemap = settings.sitemap;
-            }
-            if (settings.extractionModel) {
-              body.extraction_model = settings.extractionModel;
-            }
-            if (settings.extractionProvider) {
-              body.extraction_provider = settings.extractionProvider;
-            }
-
-            const advanced: Record<string, unknown> = {};
-            if (settings.renderJs && settings.renderJs !== "false") {
-              advanced.render_js = settings.renderJs === "auto" ? "auto" : true;
-            }
-            if (settings.useProxy) advanced.use_proxy = true;
-            if (settings.maxConcurrency && settings.maxConcurrency !== 10) {
-              advanced.max_concurrency = settings.maxConcurrency;
-            }
-            if (settings.delay && settings.delay > 0) {
-              advanced.delay = settings.delay;
-            }
-            if (settings.timeout && settings.timeout !== 90) {
-              advanced.timeout = settings.timeout;
-            }
-            if (Object.keys(advanced).length > 0) body.advanced = advanced;
+            const body = buildCrawlBody(crawlUrl, settings);
 
             // Submit the crawl
             const crawlRequestUrl = apiUrl("/api/v1/crawl");
             const startResponse =
-              await this.helpers.httpRequestWithAuthentication.call(
-                this,
-                authName,
-                {
+              await request(authName, {
                   method: "POST",
                   url: crawlRequestUrl,
                   body,
@@ -2345,10 +3157,7 @@ export class AlterLab implements INodeType {
               pollDelay = Math.min(pollDelay * 1.5, maxPollDelay);
 
               const pollResponse =
-                await this.helpers.httpRequestWithAuthentication.call(
-                  this,
-                  authName,
-                  {
+                await request(authName, {
                     method: "GET",
                     url: crawlPollUrl,
                     json: true,
@@ -2398,6 +3207,134 @@ export class AlterLab implements INodeType {
             continue;
           }
 
+          if (crawlOp === "resume") {
+            const crawlId = this.getNodeParameter("crawlId", i) as string;
+            const opts = this.getNodeParameter(
+              "crawlResumeOptions",
+              i,
+              {},
+            ) as CrawlResumeInput;
+
+            const response = await request(authName, {
+              method: "POST",
+              url: apiUrl(`/api/v1/crawl/${crawlId}/resume`),
+              body: buildCrawlResumeBody(opts),
+              json: true,
+              returnFullResponse: true,
+              ignoreHttpStatusErrors: true,
+            });
+
+            const statusCode = (response as { statusCode: number }).statusCode;
+            const responseBody = (response as { body: Record<string, unknown> })
+              .body;
+
+            if (statusCode >= 400) {
+              handleApiError(this, statusCode, responseBody as JsonObject, i);
+            }
+
+            results.push({ json: { crawlId, ...(responseBody as IDataObject) } });
+            continue;
+          }
+
+          if (crawlOp === "export") {
+            const crawlId = this.getNodeParameter("crawlId", i) as string;
+            const opts = this.getNodeParameter("crawlExportOptions", i, {}) as {
+              format?: string;
+              status?: string;
+              fields?: string;
+            };
+            const qs = buildCrawlExportQuery(opts);
+
+            // The endpoint streams a file (json | jsonl | csv), so fetch it
+            // as text and parse it ourselves.
+            const response = await request(authName, {
+              method: "GET",
+              url: apiUrl(`/api/v1/crawl/${crawlId}/export`),
+              qs,
+              json: false,
+              encoding: "text",
+              returnFullResponse: true,
+              ignoreHttpStatusErrors: true,
+            });
+
+            const statusCode = (response as { statusCode: number }).statusCode;
+            const rawBody = (response as { body: unknown }).body;
+
+            if (statusCode >= 400) {
+              let errBody: JsonObject = {};
+              try {
+                errBody =
+                  typeof rawBody === "string"
+                    ? (JSON.parse(rawBody) as JsonObject)
+                    : ((rawBody ?? {}) as JsonObject);
+              } catch {
+                errBody = { detail: String(rawBody ?? "") };
+              }
+              handleApiError(this, statusCode, errBody, i);
+            }
+
+            const rows = parseCrawlExport(rawBody, qs.format);
+            if (rows.length === 0) {
+              results.push({
+                json: {
+                  crawlId,
+                  format: qs.format,
+                  status: qs.status ?? null,
+                  count: 0,
+                },
+              });
+            } else {
+              for (const row of rows) {
+                results.push({ json: row as IDataObject });
+              }
+            }
+            continue;
+          }
+
+          if (crawlOp === "list") {
+            const filters = this.getNodeParameter("crawlListFilters", i, {}) as {
+              limit?: number;
+              offset?: number;
+              status?: string;
+              domain?: string;
+            };
+            const qs: Record<string, string | number> = {};
+            if (filters.limit && filters.limit !== 20) qs.limit = filters.limit;
+            if (filters.offset) qs.offset = filters.offset;
+            if (filters.status) qs.status = filters.status;
+            if (filters.domain) qs.domain = filters.domain;
+
+            const response = await request(authName, {
+              method: "GET",
+              url: apiUrl("/api/v1/crawl"),
+              qs,
+              json: true,
+              returnFullResponse: true,
+              ignoreHttpStatusErrors: true,
+            });
+
+            const statusCode = (response as { statusCode: number }).statusCode;
+            const responseBody = (response as { body: Record<string, unknown> })
+              .body;
+
+            if (statusCode >= 400) {
+              handleApiError(this, statusCode, responseBody as JsonObject, i);
+            }
+
+            const crawls = (responseBody as { crawls?: IDataObject[] }).crawls;
+            if (crawls?.length) {
+              for (const crawl of crawls) results.push({ json: crawl });
+            } else {
+              results.push({
+                json: {
+                  crawls: [],
+                  total: (responseBody as { total?: number }).total ?? 0,
+                },
+              });
+            }
+            continue;
+          }
+
           throw new NodeOperationError(
             this.getNode(),
             `Unknown crawl operation: ${crawlOp}`,
@@ -2420,9 +3357,15 @@ export class AlterLab implements INodeType {
             scrapeResults?: boolean;
             scrapeFormats?: string[];
             extractionSchema?: string;
+            engine?: string;
+            safeSearch?: boolean;
           };
 
           const body: Record<string, unknown> = { query };
+          if (opts.engine && opts.engine !== "duckduckgo") {
+            body.engine = opts.engine;
+          }
+          if (opts.safeSearch === false) body.safe_search = false;
           if (opts.numResults && opts.numResults !== 10)
             body.num_results = opts.numResults;
           if (opts.page && opts.page !== 1) body.page = opts.page;
@@ -2451,10 +3394,7 @@ export class AlterLab implements INodeType {
 
           const searchRequestUrl = apiUrl("/api/v1/search");
           const response =
-            await this.helpers.httpRequestWithAuthentication.call(
-              this,
-              authName,
-              {
+            await request(authName, {
                 method: "POST",
                 url: searchRequestUrl,
                 body,
@@ -2500,10 +3440,7 @@ export class AlterLab implements INodeType {
                 );
 
                 const pollResp =
-                  await this.helpers.httpRequestWithAuthentication.call(
-                    this,
-                    authName,
-                    {
+                  await request(authName, {
                       method: "GET",
                       url: searchPollUrl,
                       json: true,
@@ -2585,10 +3522,7 @@ export class AlterLab implements INodeType {
           if (opts.sitemapPath) body.sitemap_path = opts.sitemapPath;
 
           const response =
-            await this.helpers.httpRequestWithAuthentication.call(
-              this,
-              authName,
-              {
+            await request(authName, {
                 method: "POST",
                 url: apiUrl("/api/v1/map"),
                 body,
@@ -2670,10 +3604,7 @@ export class AlterLab implements INodeType {
             body.cache_ttl = opts.cacheTtl;
 
           const response =
-            await this.helpers.httpRequestWithAuthentication.call(
-              this,
-              authName,
-              {
+            await request(authName, {
                 method: "POST",
                 url: apiUrl("/api/v1/extract"),
                 body,
@@ -2720,6 +3651,8 @@ export class AlterLab implements INodeType {
             if (formats.json !== undefined) output.json = formats.json;
             if (formats.json_v2 !== undefined) output.jsonV2 = formats.json_v2;
             if (formats.rag !== undefined) output.rag = formats.rag;
+            if (formats.content !== undefined) output.content = formats.content;
+            if (formats.raw !== undefined) output.raw = formats.raw;
           }
 
           results.push({ json: output });
@@ -2730,19 +3663,68 @@ export class AlterLab implements INodeType {
         //  BATCH RESOURCE
         // ══════════════════════════════════════════════════
         if (resource === "batch") {
+          const batchOp = this.getNodeParameter(
+            "batchOperation",
+            i,
+            "submit",
+          ) as string;
+
+          if (batchOp === "list") {
+            const filters = this.getNodeParameter("batchListFilters", i, {}) as {
+              limit?: number;
+              offset?: number;
+            };
+            const qs: Record<string, number> = {};
+            if (filters.limit && filters.limit !== 20) qs.limit = filters.limit;
+            if (filters.offset) qs.offset = filters.offset;
+
+            // Note: the history endpoint is /batches (plural).
+            const response = await request(authName, {
+              method: "GET",
+              url: apiUrl("/api/v1/batches"),
+              qs,
+              json: true,
+              returnFullResponse: true,
+              ignoreHttpStatusErrors: true,
+            });
+
+            const statusCode = (response as { statusCode: number }).statusCode;
+            const responseBody = (response as { body: Record<string, unknown> })
+              .body;
+
+            if (statusCode >= 400) {
+              handleApiError(this, statusCode, responseBody as JsonObject, i);
+            }
+
+            const batches = (responseBody as { batches?: IDataObject[] })
+              .batches;
+            if (batches?.length) {
+              for (const batch of batches) results.push({ json: batch });
+            } else {
+              results.push({
+                json: {
+                  batches: [],
+                  total: (responseBody as { total?: number }).total ?? 0,
+                },
+              });
+            }
+            continue;
+          }
+
           const urlsRaw = this.getNodeParameter("batchUrls", i) as string;
           const opts = this.getNodeParameter("batchOptions", i, {}) as {
             webhookUrl?: string;
+            sessionId?: string;
+            exportIntegrationId?: string;
+            exportPrefix?: string;
+            exportFormat?: string;
             waitForCompletion?: boolean;
             pollTimeout?: number;
           };
 
           let urls: unknown[];
           try {
-            urls = typeof urlsRaw === "string" ? JSON.parse(urlsRaw) : urlsRaw;
-            if (!Array.isArray(urls)) {
-              throw new Error("URLs must be an array");
-            }
+            urls = parseJsonArrayParam(urlsRaw, "URLs");
           } catch {
             throw new NodeOperationError(
               this.getNode(),
@@ -2752,14 +3734,11 @@ export class AlterLab implements INodeType {
           }
 
           const body: Record<string, unknown> = { urls };
-          if (opts.webhookUrl) body.webhook_url = opts.webhookUrl;
+          applyBatchOptions(body, opts);
 
           const batchRequestUrl = apiUrl("/api/v1/batch");
           const submitResponse =
-            await this.helpers.httpRequestWithAuthentication.call(
-              this,
-              authName,
-              {
+            await request(authName, {
                 method: "POST",
                 url: batchRequestUrl,
                 body,
@@ -2807,10 +3786,7 @@ export class AlterLab implements INodeType {
             batchDelay = Math.min(batchDelay * 1.5, maxBatchDelay);
 
             const pollResponse =
-              await this.helpers.httpRequestWithAuthentication.call(
-                this,
-                authName,
-                {
+              await request(authName, {
                   method: "GET",
                   url: batchPollUrl,
                   json: true,
@@ -2903,10 +3879,7 @@ export class AlterLab implements INodeType {
           }
 
           const response =
-            await this.helpers.httpRequestWithAuthentication.call(
-              this,
-              authName,
-              {
+            await request(authName, {
                 method: "POST",
                 url: apiUrl("/api/v1/scrape/estimate"),
                 body,
@@ -2958,6 +3931,7 @@ export class AlterLab implements INodeType {
         const executionMode = this.getNodeParameter("executionMode", i, {}) as {
           cache?: boolean;
           cacheTtl?: number;
+          forceRefresh?: boolean;
         };
         const advancedOptions = this.getNodeParameter(
           "advancedOptions",
@@ -2977,8 +3951,14 @@ export class AlterLab implements INodeType {
           cookies?: string;
           sectionFilter?: string;
           sessionId?: string;
-        };
+        } & ScrapeAdvancedInput;
+        const scrapeExtras = this.getNodeParameter(
+          "scrapeExtras",
+          i,
+          {},
+        ) as ScrapeExtrasInput & { asyncSubmit?: boolean };
         const extraction = this.getNodeParameter("extraction", i, {}) as {
+          extractionTemplate?: string;
           extractionProfile?: string;
           extractionPrompt?: string;
           extractionSchema?: string;
@@ -2991,6 +3971,7 @@ export class AlterLab implements INodeType {
           maxCredits?: number;
           forceTier?: string;
           maxTier?: string;
+          timeBudget?: number;
           preferCost?: boolean;
           preferSpeed?: boolean;
           failFast?: boolean;
@@ -3035,6 +4016,7 @@ export class AlterLab implements INodeType {
             body.cache_ttl = executionMode.cacheTtl;
           }
         }
+        if (executionMode.forceRefresh) body.force_refresh = true;
 
         // Advanced options → nested "advanced" object
         const advanced: Record<string, unknown> = {};
@@ -3088,6 +4070,7 @@ export class AlterLab implements INodeType {
         if (advancedOptions.sessionId) {
           advanced.session_id = advancedOptions.sessionId;
         }
+        applyScrapeAdvancedParity(advanced, advancedOptions);
         if (Object.keys(advanced).length > 0) {
           body.advanced = advanced;
         }
@@ -3098,6 +4081,16 @@ export class AlterLab implements INodeType {
           extraction.extractionProfile !== "auto"
         ) {
           body.extraction_profile = extraction.extractionProfile;
+        }
+        if (extraction.extractionTemplate) {
+          if (body.extraction_profile) {
+            throw new NodeOperationError(
+              this.getNode(),
+              "Extraction Template and a non-Auto Extraction Profile are mutually exclusive",
+              { itemIndex: i },
+            );
+          }
+          body.extraction_template = extraction.extractionTemplate;
         }
         if (extraction.extractionPrompt) {
           body.extraction_prompt = extraction.extractionPrompt;
@@ -3140,6 +4133,9 @@ export class AlterLab implements INodeType {
         if (costControls.maxTier) {
           costCtrl.max_tier = costControls.maxTier;
         }
+        if (costControls.timeBudget && costControls.timeBudget > 0) {
+          costCtrl.time_budget = costControls.timeBudget;
+        }
         if (costControls.preferCost) costCtrl.prefer_cost = true;
         if (costControls.preferSpeed) costCtrl.prefer_speed = true;
         if (costControls.failFast) costCtrl.fail_fast = true;
@@ -3147,12 +4143,16 @@ export class AlterLab implements INodeType {
           body.cost_controls = costCtrl;
         }
 
+        applyScrapeExtras(body, scrapeExtras);
+        if (scrapeExtras.asyncSubmit) {
+          body.sync = false;
+          // sync_policy only applies to synchronous requests (API rejects the combo).
+          delete body.sync_policy;
+        }
+
         // ── Make the API call ─────────────────────────────
         const scrapeRequestUrl = apiUrl("/api/v1/scrape");
-        let response = await this.helpers.httpRequestWithAuthentication.call(
-          this,
-          authName,
-          {
+        let response = await request(authName, {
             method: "POST",
             url: scrapeRequestUrl,
             body,
@@ -3164,6 +4164,24 @@ export class AlterLab implements INodeType {
 
         let statusCode = (response as { statusCode: number }).statusCode;
         let responseBody = (response as { body: Record<string, unknown> }).body;
+
+        // ── Async submission: hand back the job without polling ─
+        if (scrapeExtras.asyncSubmit && statusCode < 400) {
+          const jobId = (responseBody?.job_id as string) ?? null;
+          results.push({
+            json: {
+              jobId,
+              status: (responseBody?.status as string) ?? "queued",
+              pollUrl:
+                (responseBody?.poll_url as string) ??
+                (jobId ? `/api/v1/jobs/${jobId}` : null),
+              ...(responseBody?.sync_downgraded !== undefined
+                ? { syncDowngraded: responseBody.sync_downgraded }
+                : {}),
+            } as IDataObject,
+          });
+          continue;
+        }
 
         // ── Handle async (202) with polling ───────────────
         if (statusCode === 202 && responseBody?.job_id) {
@@ -3184,10 +4202,7 @@ export class AlterLab implements INodeType {
             delay = Math.min(delay * 2, maxDelay);
 
             const pollResponse =
-              await this.helpers.httpRequestWithAuthentication.call(
-                this,
-                authName,
-                {
+              await request(authName, {
                   method: "GET",
                   url: scrapePollUrl,
                   json: true,
@@ -3284,15 +4299,24 @@ export class AlterLab implements INodeType {
 
         // Billing breakdown (flattened)
         const billing = data.billing as Record<string, unknown> | undefined;
-        output.billing = {
+        const billingOut: IDataObject = {
           cost: billing?.total_credits ?? data.credits_used ?? 0,
           tier: billing?.tier_used ?? data.tier_used ?? "unknown",
           savings: billing?.savings ?? 0,
           suggestion: billing?.optimization_suggestion ?? null,
         };
+        mapBillingExtras(billingOut, billing);
+        output.billing = billingOut;
+        mapScrapeResponseExtras(output, data);
 
         results.push({ json: output });
-      } catch (error) {
+      } catch (rawError) {
+        const error =
+          rawError instanceof ParamError
+            ? new NodeOperationError(this.getNode(), rawError.message, {
+                itemIndex: i,
+              })
+            : rawError;
         if (this.continueOnFail()) {
           results.push({
             json: { error: (error as Error).message },
