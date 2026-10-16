@@ -212,7 +212,36 @@ No subscriptions. No monthly minimums. Add balance and use it whenever you need 
 | **OCR** | Extract text from images on the page |
 | **Proxy** | Route through residential proxies with country targeting |
 | **Cache** | Cache responses from 60 seconds to 24 hours |
-| **Cost Controls** | Set maximum spend per request, force specific tiers, prefer cost or speed |
+| **Cost Controls** | Set maximum spend per request, force specific tiers, prefer cost or speed, and cap total escalation time (`time_budget`) |
+| **Auto-Detect JavaScript** | `render_js=auto`: render only the pages that need a browser |
+| **Block Images** | Skip image downloads during browser rendering to save proxy bandwidth |
+| **Skip TLS Verification** | Default (verify, fall back on an invalid site certificate), skip, or always require |
+| **Browser Actions** | Up to 20 click / fill / scroll / wait / evaluate / screenshot steps run after page load |
+| **Sticky Session** | Reuse captured cookies (and best-effort exit IP) across separate scrapes |
+| **Bring Your Own Proxy** | Route through your own proxy integration (`use_own_proxy`, `proxy_integration_id`) |
+| **Force Refresh** | Bypass the cache for a single request |
+
+### Additional Options (Scrape)
+
+Content type, custom headers, geo-targeting (`location.country` / `location.language`), wait-for selector, content filtering, scroll control, PDF format, OCR language, webhook URL, sync policy, async submit (returns the job ID without polling), and inline embeddings.
+
+### Resources and Operations
+
+| Resource | Operations |
+|---|---|
+| **Scrape** | Scrape, Estimate Cost |
+| **Crawl** | Start (polls to completion), Get Status, Cancel, Resume, Export (JSON / JSONL / CSV, one item per page), List |
+| **Search** | Web search with engine (DuckDuckGo, Google, Bing), safe search, and optional result scraping |
+| **Map** | Discover URLs via sitemap and link crawling |
+| **Extract** | LLM / algorithmic extraction on content you already have |
+| **Batch** | Submit (with BYOS session and cloud export), List history |
+| **Session** | Create, List, Get, Update, Delete, Validate, Refresh |
+
+Scrape output also includes `jobId`, `finalUrl`, `cachedAt` / `expiresAt` / `staleCache`, `raw`, `warning` fields, `actionResults`, `embeddings`, `metadata`, and BYOP / BYOS billing details when the API returns them.
+
+### Credential Test
+
+The **Test** button calls `GET /api/v1/auth/identity`, which validates the API key without spending credits.
 
 ## Frequently Asked Questions
 
@@ -263,14 +292,12 @@ npm run lint
 This project uses GitHub Actions for automation:
 
 - **CI** — Runs on every push and PR to `main`. Builds and type-checks across Node.js 18, 20, and 22. Verifies all dist output files are present.
-- **Publish** — Automatically publishes to npm when a GitHub Release is created. Uses npm provenance for supply-chain security.
+- **Publish** — Automatically publishes to npm when a GitHub Release is created, using npm trusted publishing (OIDC) with provenance for supply-chain security. No long-lived npm token is stored in the repository.
 - **Dependabot** — Automated weekly dependency updates for npm packages and GitHub Actions.
 
-### Required GitHub Secrets
+### Publishing
 
-| Secret | Description | Where to Get It |
-|---|---|---|
-| `NPM_TOKEN` | npm automation token for publishing | [npmjs.com → Access Tokens → Generate](https://www.npmjs.com/settings/~/tokens) — use "Automation" type |
+Publishing uses [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC). The workflow requests `id-token: write` and runs `npm publish --provenance`; no `NPM_TOKEN` secret is required. The trusted publisher for this package must stay configured on npmjs.com.
 
 ## Support
 
