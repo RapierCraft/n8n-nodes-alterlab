@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.14.0
+
+OAuth2 credential rebuilt for n8n 2.x and self-hosted instances (#46, support ticket ALT-80).
+
+### Fixed
+- The OAuth2 credential now overrides n8n's real `authUrl` property. It previously set `authorizationUrl`, which n8n ignores, so the inherited **Authorization URL** stayed visible and blank.
+- Authorization goes to the browser route `https://alterlab.io/oauth/authorize` (a GET) instead of `https://app.alterlab.io/oauth/authorize` (which redirected to a pathless `http://alterlab.io`) or the POST-only API route (`{"detail":"Method Not Allowed"}`).
+- Self-hosted callbacks no longer depend on a static server-side allowlist: the credential registers a public client for each n8n instance (Dynamic Client Registration) and uses PKCE (`grantType: pkce`, S256).
+- The OAuth credential test calls `GET /api/v1/auth/identity`, which accepts OAuth bearer tokens.
+
+### Security
+- Removed the hardcoded OAuth client ID and client secret that were published in the package. The credential no longer contains any secret. If you connected with 0.12.x/0.13.0, reconnect after upgrading.
+
+### Added
+- **Account > Get Balance** operation (`GET /api/v1/billing/balance`): balance in microcents and USD, deposited/spent/granted totals, tier and auto-recharge settings. Works with an API key or OAuth2.
+- Manual client registration path (`POST /api/v1/oauth/register`) documented in the README for n8n versions or setups that cannot use dynamic registration.
+- `tests/oauth.test.js` (credential properties checked against a snapshot of n8n's inherited `oAuth2Api` fields) and `tests/e2e/oauth-local.e2e.js` (register, authorize with PKCE, token, refresh, revoke and bearer calls against a local AlterLab API).
+
+### Changed
+- README lists the API key first; the OAuth2 credential is no longer labelled "Recommended" in the node's credential picker. The API key credential is unchanged.
+
 ## 0.13.0
 
 API parity sync against the current AlterLab API.
