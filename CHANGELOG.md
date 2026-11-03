@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.14.1] - 2026-11-03
+
+- Sync node fields with the AlterLab OpenAPI spec
+
 ## 0.14.0
 
 OAuth2 credential rebuilt for n8n 2.x and self-hosted instances (#46, support ticket ALT-80).
