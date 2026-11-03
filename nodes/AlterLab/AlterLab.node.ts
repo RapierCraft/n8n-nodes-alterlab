@@ -1059,7 +1059,758 @@ export class AlterLab implements INodeType {
       },
 
       // ══════════════════════════════════════════════════════
-      //  CRAWL RESOURCE
+      
+      // ── Auto-generated from OpenAPI spec ──
+      {
+        displayName: 'Actions On Error',
+        name: 'actions_on_error',
+        type: 'options',
+        default: "continue",
+        description: 'What a failed required action (optional=false) does: "continue" (default) skips it like an optional one; "abort" skips t',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+        options: [
+          { name: 'Continue', value: 'continue' },
+          { name: 'Abort', value: 'abort' },
+        ],
+      },
+
+      {
+        displayName: 'Agent Profile',
+        name: 'agent_profile',
+        type: 'string',
+        default: "",
+        description: 'Opt-in output profile for LLM agents.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Block Images',
+        name: 'block_images',
+        type: 'boolean',
+        default: false,
+        description: 'Skip image downloads during browser rendering to reduce proxy bandwidth.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Body',
+        name: 'body',
+        type: 'string',
+        default: "",
+        description: 'Request body to send with POST.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Cache Ttl',
+        name: 'cache_ttl',
+        type: 'number',
+        default: 0,
+        description: 'Cache TTL in seconds (60-86400).',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Consent',
+        name: 'consent',
+        type: 'options',
+        default: "",
+        description: 'Consent overlay handling.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+        options: [
+          { name: 'Hide', value: 'hide' },
+          { name: 'Accept', value: 'accept' },
+          { name: 'Reject', value: 'reject' },
+        ],
+      },
+
+      {
+        displayName: 'Content Type',
+        name: 'content_type',
+        type: 'options',
+        default: "",
+        description: 'Content-Type header for the request body.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+        options: [
+          { name: 'Application/Json', value: 'application/json' },
+          { name: 'Application/X-Www-Form-Urlencoded', value: 'application/x-www-form-urlencoded' },
+          { name: 'Text/Plain', value: 'text/plain' },
+          { name: 'Application/Graphql', value: 'application/graphql' },
+        ],
+      },
+
+      {
+        displayName: 'Cost Controls',
+        name: 'cost_controls',
+        type: 'json',
+        default: "",
+        description: 'See AlterLab API docs for cost_controls.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Embeddings',
+        name: 'embeddings',
+        type: 'json',
+        default: "",
+        description: 'Optional embeddings configuration.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Enable Scroll',
+        name: 'enable_scroll',
+        type: 'boolean',
+        default: false,
+        description: 'Force enable scrolling for lazy-load images.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Extraction Model',
+        name: 'extraction_model',
+        type: 'string',
+        default: "",
+        description: 'Per-request LLM model override in provider-specific format (e.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Extraction Profile',
+        name: 'extraction_profile',
+        type: 'options',
+        default: "auto",
+        description: 'Pre-defined extraction profile (schema template)',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+        options: [
+          { name: 'Auto', value: 'auto' },
+          { name: 'Product', value: 'product' },
+          { name: 'Article', value: 'article' },
+          { name: 'Job_Posting', value: 'job_posting' },
+          { name: 'Faq', value: 'faq' },
+          { name: 'Recipe', value: 'recipe' },
+          { name: 'Event', value: 'event' },
+          { name: 'Ecommerce_Homepage', value: 'ecommerce_homepage' },
+          { name: 'Directory_Listing', value: 'directory_listing' },
+        ],
+      },
+
+      {
+        displayName: 'Extraction Prompt',
+        name: 'extraction_prompt',
+        type: 'string',
+        default: "",
+        description: 'Natural language instructions for extraction',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Extraction Provider',
+        name: 'extraction_provider',
+        type: 'options',
+        default: "",
+        description: 'LLM provider to use for extraction.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+        options: [
+          { name: 'Openai', value: 'openai' },
+          { name: 'Anthropic', value: 'anthropic' },
+          { name: 'Openrouter', value: 'openrouter' },
+          { name: 'Groq', value: 'groq' },
+        ],
+      },
+
+      {
+        displayName: 'Extraction Schema',
+        name: 'extraction_schema',
+        type: 'json',
+        default: "",
+        description: 'JSON Schema for filtering extracted data.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Extraction Template',
+        name: 'extraction_template',
+        type: 'options',
+        default: "",
+        description: 'Shorthand for extraction_profile.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+        options: [
+          { name: 'Auto', value: 'auto' },
+          { name: 'Product', value: 'product' },
+          { name: 'Article', value: 'article' },
+          { name: 'Job_Posting', value: 'job_posting' },
+          { name: 'Faq', value: 'faq' },
+          { name: 'Recipe', value: 'recipe' },
+          { name: 'Event', value: 'event' },
+          { name: 'Ecommerce_Homepage', value: 'ecommerce_homepage' },
+          { name: 'Directory_Listing', value: 'directory_listing' },
+        ],
+      },
+
+      {
+        displayName: 'Filter Content',
+        name: 'filter_content',
+        type: 'boolean',
+        default: false,
+        description: 'Apply quality filtering to extracted content.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Flatten Shadow Dom',
+        name: 'flatten_shadow_dom',
+        type: 'boolean',
+        default: false,
+        description: 'Flatten Shadow DOM roots into regular DOM for extraction (free, requires render_js).',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Force Refresh',
+        name: 'force_refresh',
+        type: 'boolean',
+        default: false,
+        description: 'Force fresh fetch even if cache=True.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Generate Pdf',
+        name: 'generate_pdf',
+        type: 'boolean',
+        default: false,
+        description: 'Generate PDF of rendered page (+$0.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Include Iframes',
+        name: 'include_iframes',
+        type: 'boolean',
+        default: false,
+        description: 'Inline iframe content into the main document (free, requires render_js).',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Include Raw Html',
+        name: 'include_raw_html',
+        type: 'boolean',
+        default: false,
+        description: 'See AlterLab API docs for include_raw_html.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Location',
+        name: 'location',
+        type: 'json',
+        default: "",
+        description: 'Geo-targeting parameters.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Markdown',
+        name: 'markdown',
+        type: 'boolean',
+        default: false,
+        description: 'Extract content as Markdown (free)',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Max Age',
+        name: 'max_age',
+        type: 'number',
+        default: 0,
+        description: 'Accept a stored result up to this many seconds old (0-86400).',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Max Response Bytes',
+        name: 'max_response_bytes',
+        type: 'number',
+        default: 5242880,
+        description: 'Soft cap on raw response body size in bytes.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Max Tokens',
+        name: 'max_tokens',
+        type: 'number',
+        default: 0,
+        description: 'Token budget for the markdown format when agent_profile=\'agent\'.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Method',
+        name: 'method',
+        type: 'options',
+        default: "GET",
+        description: 'HTTP method to use when fetching the target URL.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+        options: [
+          { name: 'Get', value: 'GET' },
+          { name: 'Post', value: 'POST' },
+        ],
+      },
+
+      {
+        displayName: 'Ocr Language',
+        name: 'ocr_language',
+        type: 'string',
+        default: "eng",
+        description: 'See AlterLab API docs for ocr_language.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Pdf Format',
+        name: 'pdf_format',
+        type: 'string',
+        default: "markdown",
+        description: 'See AlterLab API docs for pdf_format.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Promote Schema Org',
+        name: 'promote_schema_org',
+        type: 'boolean',
+        default: true,
+        description: 'Use Schema.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Proxy Country',
+        name: 'proxy_country',
+        type: 'string',
+        default: "",
+        description: 'Preferred proxy country code (e.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Proxy Integration Id',
+        name: 'proxy_integration_id',
+        type: 'string',
+        default: "",
+        description: 'Specific proxy integration ID to use (requires use_own_proxy=true)',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Remove Cookie Banners',
+        name: 'remove_cookie_banners',
+        type: 'boolean',
+        default: true,
+        description: 'Remove cookie consent banners from HTML before content extraction and hide consent overlays on the live page before scre',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Render Js',
+        name: 'render_js',
+        type: 'json',
+        default: false,
+        description: 'Render JavaScript using headless browser (forces Tier 4 minimum).',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Scroll Count',
+        name: 'scroll_count',
+        type: 'number',
+        default: 3,
+        description: 'Number of scroll iterations when scroll_to_load is enabled (1-10, default 3).',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Scroll To Load',
+        name: 'scroll_to_load',
+        type: 'boolean',
+        default: false,
+        description: 'Scroll page to trigger lazy-loaded content (requires render_js).',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Section Filter',
+        name: 'section_filter',
+        type: 'json',
+        default: "",
+        description: 'Filter options for json_v2 section tree output.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Session Headers',
+        name: 'session_headers',
+        type: 'json',
+        default: "",
+        description: 'Inline auth headers (e.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Session Id',
+        name: 'session_id',
+        type: 'string',
+        default: "",
+        description: 'Reference to a stored SessionIntegration.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Skip Tls Verification',
+        name: 'skip_tls_verification',
+        type: 'boolean',
+        default: false,
+        description: 'TLS certificate verification for the target.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Sticky Session',
+        name: 'sticky_session',
+        type: 'string',
+        default: "",
+        description: 'Customer-facing sticky-session handle.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Sticky Session Ttl',
+        name: 'sticky_session_ttl',
+        type: 'number',
+        default: 0,
+        description: 'Sticky-session lifetime in seconds (300–7200, default 1800).',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Sync Policy',
+        name: 'sync_policy',
+        type: 'options',
+        default: "auto",
+        description: 'Synchronous wait policy.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+        options: [
+          { name: 'Auto', value: 'auto' },
+          { name: 'Wait_Until_Deadline', value: 'wait_until_deadline' },
+        ],
+      },
+
+      {
+        displayName: 'Use Own Proxy',
+        name: 'use_own_proxy',
+        type: 'boolean',
+        default: false,
+        description: 'Use your own integrated proxy instead of system proxy ($0.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Use Proxy',
+        name: 'use_proxy',
+        type: 'boolean',
+        default: false,
+        description: 'Route request through premium proxy (+$0.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Use System Proxy',
+        name: 'use_system_proxy',
+        type: 'boolean',
+        default: false,
+        description: 'Override your default proxy integration and use AlterLab\'s system proxy instead',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Wait Condition',
+        name: 'wait_condition',
+        type: 'string',
+        default: "networkidle",
+        description: 'Wait condition for JS rendering (domcontentloaded|networkidle|load)',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Wait For',
+        name: 'wait_for',
+        type: 'string',
+        default: "",
+        description: 'See AlterLab API docs for wait_for.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },
+
+      {
+        displayName: 'Wait Until',
+        name: 'wait_until',
+        type: 'string',
+        default: "networkidle",
+        description: 'See AlterLab API docs for wait_until.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+      },//  CRAWL RESOURCE
       // ══════════════════════════════════════════════════════
 
       {
