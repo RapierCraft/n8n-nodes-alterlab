@@ -1810,6 +1810,24 @@ export class AlterLab implements INodeType {
             operation: ['scrape'],
           },
         },
+      },
+      // ── Auto-generated from OpenAPI spec ──
+      {
+        displayName: 'Response',
+        name: 'response',
+        type: 'options',
+        default: "",
+        description: 'Response shape.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
+        options: [
+          { name: 'Full', value: 'full' },
+          { name: 'Minimal', value: 'minimal' },
+        ],
       },//  CRAWL RESOURCE
       // ══════════════════════════════════════════════════════
 
