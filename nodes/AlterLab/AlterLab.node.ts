@@ -1828,6 +1828,20 @@ export class AlterLab implements INodeType {
           { name: 'Full', value: 'full' },
           { name: 'Minimal', value: 'minimal' },
         ],
+      },
+      // ── Auto-generated from OpenAPI spec ──
+      {
+        displayName: 'Extraction Selectors',
+        name: 'extraction_selectors',
+        type: 'json',
+        default: "",
+        description: 'Deterministic field extraction: {field: {css|xpath, attr?, multiple?}} evaluated on the fetched HTML.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
       },//  CRAWL RESOURCE
       // ══════════════════════════════════════════════════════
 
