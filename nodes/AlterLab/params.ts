@@ -67,7 +67,7 @@ export function triState(value: unknown): boolean | undefined {
 export const SOURCE_HEADER = "X-AlterLab-Source";
 
 // Kept in sync with package.json "version" (enforced by a unit test).
-export const NODE_VERSION = "0.14.3";
+export const NODE_VERSION = "0.15.0";
 
 export const SOURCE_VALUE = `n8n-node/${NODE_VERSION}`;
 
