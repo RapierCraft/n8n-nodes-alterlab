@@ -552,10 +552,66 @@ test("crawl list passes filters and splits crawls into items", async () => {
 
 // ── search / batch / extract ──────────────────────────────────────────
 
-test("search maps engine and safe_search only when non-default", async () => {
+test("search defaults to unified search with concise content", async () => {
   const defaults = await run({ resource: "search", searchQuery: "q" }, [ok({})]);
-  assert.deepEqual(defaults.calls[0].options.body, { query: "q" });
+  assert.deepEqual(defaults.calls[0].options.body, {
+    query: "q",
+    engine: "auto",
+    scrape_results: true,
+    preset: "agent",
+    mode: "standard",
+  });
+});
 
+test("search opt-outs: scrape results off, explicit engine, concise off, formats, mode", async () => {
+  const listOnly = await run(
+    { resource: "search", searchQuery: "q", searchOptions: { scrapeResults: false } },
+    [ok({})],
+  );
+  assert.deepEqual(listOnly.calls[0].options.body, {
+    query: "q",
+    engine: "auto",
+    scrape_results: false,
+  });
+
+  const legacy = await run(
+    { resource: "search", searchQuery: "q", searchOptions: { engine: "duckduckgo" } },
+    [ok({})],
+  );
+  assert.deepEqual(legacy.calls[0].options.body, {
+    query: "q",
+    engine: "duckduckgo",
+    scrape_results: false,
+  });
+
+  const full = await run(
+    {
+      resource: "search",
+      searchQuery: "q",
+      searchOptions: { concise: false, searchMode: "deep" },
+    },
+    [ok({})],
+  );
+  assert.deepEqual(full.calls[0].options.body, {
+    query: "q",
+    engine: "auto",
+    scrape_results: true,
+    mode: "deep",
+  });
+
+  const formats = await run(
+    {
+      resource: "search",
+      searchQuery: "q",
+      searchOptions: { scrapeFormats: ["json"] },
+    },
+    [ok({})],
+  );
+  assert.equal(formats.calls[0].options.body.preset, undefined);
+  assert.deepEqual(formats.calls[0].options.body.formats, ["json"]);
+});
+
+test("search maps explicit engine, safe_search and content options", async () => {
   const custom = await run(
     {
       resource: "search",

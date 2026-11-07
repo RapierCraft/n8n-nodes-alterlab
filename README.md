@@ -260,7 +260,7 @@ Content type, custom headers, geo-targeting (`location.country` / `location.lang
 | **Account** | Get Balance (credits, tier, auto-recharge; works with an API key or OAuth2) |
 | **Scrape** | Scrape, Estimate Cost |
 | **Crawl** | Start (polls to completion), Get Status, Cancel, Resume, Export (JSON / JSONL / CSV, one item per page), List |
-| **Search** | Web search with engine (DuckDuckGo, Google, Bing), safe search, and optional result scraping |
+| **Search** | Unified web search with page content by default (opt out with Scrape Results off or an explicit DuckDuckGo, Google or Bing engine), safe search, concise or full content, and latency tier |
 | **Map** | Discover URLs via sitemap and link crawling |
 | **Extract** | LLM / algorithmic extraction on content you already have |
 | **Batch** | Submit (with BYOS session and cloud export), List history |
