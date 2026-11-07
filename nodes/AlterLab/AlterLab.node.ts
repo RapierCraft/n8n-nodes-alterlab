@@ -2537,14 +2537,15 @@ export class AlterLab implements INodeType {
             displayName: "Engine",
             name: "engine",
             type: "options",
-            default: "duckduckgo",
+            default: "auto",
             options: [
+              { name: "Unified (Default, With Content)", value: "auto" },
               { name: "DuckDuckGo (Fast, Cheapest)", value: "duckduckgo" },
               { name: "Google (Browser Tier)", value: "google" },
               { name: "Bing (Browser Tier)", value: "bing" },
             ],
             description:
-              "Search engine. Google and Bing render in a browser and return richer results (featured snippets, People Also Ask) at a higher price",
+              "Search engine. Unified (default) fuses several sources into one vendor-neutral result list and returns each result page as concise markdown. Pick an engine to opt out: DuckDuckGo, Google and Bing return the result list only unless Scrape Results is on. Google and Bing render in a browser and cost more",
           },
           {
             displayName: "Safe Search",
@@ -2614,9 +2615,30 @@ export class AlterLab implements INodeType {
             displayName: "Scrape Results",
             name: "scrapeResults",
             type: "boolean",
-            default: false,
+            default: true,
             description:
-              "Whether to scrape each result page and include content in response",
+              "Whether to scrape each result page and include content in response. On by default with Unified search; turn it off for the result list only. With an explicit engine it is off unless you add this option and enable it",
+          },
+          {
+            displayName: "Concise Content",
+            name: "concise",
+            type: "boolean",
+            default: true,
+            description:
+              "Whether Unified search returns concise markdown with size caps. Turn off for full-length content",
+          },
+          {
+            displayName: "Content Latency",
+            name: "searchMode",
+            type: "options",
+            default: "standard",
+            options: [
+              { name: "Fast (5 s)", value: "fast" },
+              { name: "Standard (15 s)", value: "standard" },
+              { name: "Deep (60 s)", value: "deep" },
+            ],
+            description:
+              "How long to wait for result pages before returning. Pages not done in time are returned as pending and the node polls for them",
           },
           {
             displayName: "Scrape Formats",
@@ -2632,12 +2654,8 @@ export class AlterLab implements INodeType {
               { name: "RAG (Chunked)", value: "rag" },
               { name: "Text", value: "text" },
             ],
-            description: "Output formats when Scrape Results is enabled",
-            displayOptions: {
-              show: {
-                scrapeResults: [true],
-              },
-            },
+            description:
+              "Output formats for result content. Setting this replaces the concise markdown default",
           },
           {
             displayName: "Extraction Schema (JSON)",
@@ -2646,12 +2664,7 @@ export class AlterLab implements INodeType {
             default: "",
             placeholder: '{"title": "string", "price": "number"}',
             description:
-              "JSON schema for structured extraction when Scrape Results is enabled",
-            displayOptions: {
-              show: {
-                scrapeResults: [true],
-              },
-            },
+              "JSON schema for structured extraction from result content",
           },
         ],
       },
@@ -4202,12 +4215,21 @@ export class AlterLab implements INodeType {
             extractionSchema?: string;
             engine?: string;
             safeSearch?: boolean;
+            concise?: boolean;
+            searchMode?: string;
           };
 
-          const body: Record<string, unknown> = { query };
-          if (opts.engine && opts.engine !== "duckduckgo") {
-            body.engine = opts.engine;
-          }
+          // Default is the unified search with content (API default since
+          // AlterLab #39130): engine auto, scrape_results true, agent preset,
+          // standard latency tier. An explicit engine or Scrape Results off opts out.
+          const searchEngine = opts.engine || "auto";
+          const unifiedSearch = searchEngine === "auto";
+          const scrapeSearchResults = opts.scrapeResults ?? unifiedSearch;
+          const body: Record<string, unknown> = {
+            query,
+            engine: searchEngine,
+            scrape_results: scrapeSearchResults,
+          };
           if (opts.safeSearch === false) body.safe_search = false;
           if (opts.numResults && opts.numResults !== 10)
             body.num_results = opts.numResults;
@@ -4216,9 +4238,16 @@ export class AlterLab implements INodeType {
           if (opts.language) body.language = opts.language.toLowerCase();
           if (opts.domain) body.domain = opts.domain;
           if (opts.timeRange) body.time_range = opts.timeRange;
-          if (opts.scrapeResults) {
-            body.scrape_results = true;
+          if (scrapeSearchResults) {
             if (opts.scrapeFormats?.length) body.formats = opts.scrapeFormats;
+            if (unifiedSearch) {
+              if (opts.concise !== false && !opts.scrapeFormats?.length) {
+                body.preset = "agent";
+              }
+              body.mode = opts.searchMode || "standard";
+            } else if (opts.searchMode) {
+              body.mode = opts.searchMode;
+            }
             if (opts.extractionSchema) {
               try {
                 body.extraction_schema =

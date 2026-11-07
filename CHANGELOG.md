@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.15.0] - 2026-11-07
+
+- The Search resource now defaults to unified search with content (engine `auto`, scrape results on, concise agent preset, standard latency tier), matching the AlterLab API default since #39130.
+- Opt out by turning Scrape Results off (unified result list only) or choosing an explicit engine (DuckDuckGo, Google, Bing: result list only unless Scrape Results is on).
+- New Search Options: Concise Content and Content Latency. Scrape Formats and Extraction Schema are always available.
+
 ## [0.14.3] - 2026-11-04
 
 - Sync node fields with the AlterLab OpenAPI spec
