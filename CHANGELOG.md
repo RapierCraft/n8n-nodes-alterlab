@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.15.1] - 2026-11-10
+
+- Sync node fields with the AlterLab OpenAPI spec
+
 ## [0.15.0] - 2026-11-07
 
 - The Search resource now defaults to unified search with content (engine `auto`, scrape results on, concise agent preset, standard latency tier), matching the AlterLab API default since #39130.

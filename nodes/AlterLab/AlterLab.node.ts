@@ -1842,6 +1842,20 @@ export class AlterLab implements INodeType {
             operation: ['scrape'],
           },
         },
+      },
+      // ── Auto-generated from OpenAPI spec ──
+      {
+        displayName: 'Tag',
+        name: 'tag',
+        type: 'string',
+        default: "",
+        description: 'Optional spend-attribution tag (^[a-z0-9][a-z0-9_.',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
       },//  CRAWL RESOURCE
       // ══════════════════════════════════════════════════════
 
