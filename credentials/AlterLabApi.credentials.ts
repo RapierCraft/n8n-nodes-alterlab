@@ -8,6 +8,10 @@ import type {
 export class AlterLabApi implements ICredentialType {
   name = "alterLabApi";
   displayName = "AlterLab API";
+  icon = {
+    light: "file:../nodes/AlterLab/alterlab.svg",
+    dark: "file:../nodes/AlterLab/alterlab.dark.svg",
+  } as const;
   documentationUrl =
     "https://docs.alterlab.io/api?utm_source=n8n&utm_medium=integration&utm_campaign=community_node";
 

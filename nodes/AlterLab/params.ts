@@ -15,14 +15,21 @@ export class ParamError extends Error {
 
 type Dict = Record<string, unknown>;
 
+/** JSON.parse reported as a value so callers throw outside a catch block. */
+function tryJsonParse(raw: string): { ok: true; value: unknown } | { ok: false } {
+  try {
+    return { ok: true, value: JSON.parse(raw) };
+  } catch {
+    return { ok: false };
+  }
+}
+
 /** Parse a JSON-typed node parameter (string or already-parsed value). */
 export function parseJsonParam(raw: unknown, label: string): unknown {
   if (typeof raw !== "string") return raw;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    throw new ParamError(`Invalid JSON in ${label} field`);
-  }
+  const parsed = tryJsonParse(raw);
+  if (!parsed.ok) throw new ParamError(`Invalid JSON in ${label} field`);
+  return parsed.value;
 }
 
 /** Parse a JSON parameter that must be an object (not an array / scalar). */
@@ -67,7 +74,7 @@ export function triState(value: unknown): boolean | undefined {
 export const SOURCE_HEADER = "X-AlterLab-Source";
 
 // Kept in sync with package.json "version" (enforced by a unit test).
-export const NODE_VERSION = "0.15.1";
+export const NODE_VERSION = "0.15.2";
 
 export const SOURCE_VALUE = `n8n-node/${NODE_VERSION}`;
 
@@ -550,19 +557,18 @@ export function parseCrawlExport(body: unknown, format: string): Dict[] {
       .split(/\r?\n/)
       .filter((line) => line.trim())
       .map((line) => {
-        try {
-          return JSON.parse(line) as Dict;
-        } catch {
+        const parsed = tryJsonParse(line);
+        if (!parsed.ok) {
           throw new ParamError("Crawl export returned malformed JSONL");
         }
+        return parsed.value as Dict;
       });
   }
-  try {
-    const parsed = JSON.parse(text);
-    return Array.isArray(parsed) ? (parsed as Dict[]) : [parsed as Dict];
-  } catch {
-    throw new ParamError("Crawl export returned malformed JSON");
-  }
+  const parsed = tryJsonParse(text);
+  if (!parsed.ok) throw new ParamError("Crawl export returned malformed JSON");
+  return Array.isArray(parsed.value)
+    ? (parsed.value as Dict[])
+    : [parsed.value as Dict];
 }
 
 // ── Batch ─────────────────────────────────────────────────────────────

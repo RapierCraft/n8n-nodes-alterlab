@@ -37,6 +37,10 @@ export const ALTERLAB_DEFAULT_SCOPE = "scrape";
 export class AlterLabOAuth2Api implements ICredentialType {
   name = "alterLabOAuth2Api";
   displayName = "AlterLab OAuth2 API";
+  icon = {
+    light: "file:../nodes/AlterLab/alterlab.svg",
+    dark: "file:../nodes/AlterLab/alterlab.dark.svg",
+  } as const;
   documentationUrl =
     "https://docs.alterlab.io/api?utm_source=n8n&utm_medium=integration&utm_campaign=community_node";
 
