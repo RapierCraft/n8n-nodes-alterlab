@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.15.2] - 2026-11-13
+
+- Pass n8n's community-node vetting ruleset (`@n8n/node-cli` / `eslint-plugin-n8n-nodes-base` / `@n8n/eslint-plugin-community-nodes`) so the node can be verified for n8n Cloud.
+- Set `pairedItem` on every output item, use `sleep` from `n8n-workflow` for polling, throw errors outside catch blocks, and use `NodeConnectionTypes`.
+- Alphabetize options and collections, add a "Whether" prefix to boolean descriptions, add themed light/dark icons and credential icons, mark the node `usableAsTool`.
+- Add a "Default" option where a dropdown defaulted to an empty value; Limit fields in list operations now default to 50.
+- Add the `@n8n/node-cli` ESLint config and make `npm run lint` run it.
+- Drop the `anti-bot` keyword and description wording.
+
 ## [0.15.1] - 2026-11-10
 
 - Sync node fields with the AlterLab OpenAPI spec

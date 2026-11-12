@@ -5,7 +5,7 @@
 <h1 align="center">n8n-nodes-alterlab</h1>
 
 <p align="center">
-  <strong>Web scraping node for n8n with anti-bot bypass, JavaScript rendering, and structured data extraction.</strong>
+  <strong>Web scraping node for n8n with reliable data retrieval, JavaScript rendering, and structured data extraction.</strong>
 </p>
 
 <p align="center">
@@ -54,7 +54,7 @@ AlterLab uses a multi-tier scraping architecture that automatically selects the 
 Auto mode starts at Tier 1 and escalates only when blocked. Most websites resolve at Tiers 1-2, so **$1 gets you 1,000 to 5,000 scrapes** depending on the sites you target.
 
 <p align="center">
-  <img src="assets/platform-dashboard.png" alt="AlterLab Cortex — intelligent web scraping platform with anti-bot bypass" width="650" />
+  <img src="assets/platform-dashboard.png" alt="AlterLab Cortex — intelligent web scraping platform" width="650" />
 </p>
 
 ## Installation

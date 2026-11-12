@@ -7,7 +7,12 @@ import type {
   INodeTypeDescription,
   JsonObject,
 } from "n8n-workflow";
-import { NodeApiError, NodeOperationError } from "n8n-workflow";
+import {
+  NodeApiError,
+  NodeConnectionTypes,
+  NodeOperationError,
+  sleep,
+} from "n8n-workflow";
 import {
   normalizeBaseUrl,
   resolveApiUrl,
@@ -34,9 +39,6 @@ import {
   mapScrapeResponseExtras,
   parseCrawlExport,
   parseJsonArrayParam,
-  parseJsonObjectParam,
-  splitList,
-  triState,
 } from "./params";
 
 const UTM = "utm_source=n8n&utm_medium=integration&utm_campaign=community_node";
@@ -45,7 +47,11 @@ export class AlterLab implements INodeType {
   description: INodeTypeDescription = {
     displayName: "AlterLab",
     name: "alterLab",
-    icon: "file:alterlab.svg",
+    icon: {
+      light: "file:alterlab.svg",
+      dark: "file:alterlab.dark.svg",
+    },
+    usableAsTool: true,
     group: ["transform"],
     version: 1,
     subtitle:
@@ -55,8 +61,8 @@ export class AlterLab implements INodeType {
     defaults: {
       name: "AlterLab",
     },
-    inputs: ["main"],
-    outputs: ["main"],
+    inputs: [NodeConnectionTypes.Main],
+    outputs: [NodeConnectionTypes.Main],
     credentials: [
       {
         name: "alterLabApi",
@@ -120,7 +126,6 @@ export class AlterLab implements INodeType {
               "Manage stored browser sessions for authenticated scraping",
           },
         ],
-        description: "The resource to operate on",
       },
 
       // ══════════════════════════════════════════════════════
@@ -146,7 +151,6 @@ export class AlterLab implements INodeType {
             action: "Get account balance",
           },
         ],
-        description: "The operation to perform",
       },
 
       // ══════════════════════════════════════════════════════
@@ -180,7 +184,6 @@ export class AlterLab implements INodeType {
             action: "Estimate scraping cost",
           },
         ],
-        description: "The operation to perform",
       },
 
       // ── Primary ──────────────────────────────────────────
@@ -220,14 +223,14 @@ export class AlterLab implements INodeType {
             description: "Render JavaScript with headless browser",
           },
           {
-            name: "PDF",
-            value: "pdf",
-            description: "Extract text from PDF documents",
-          },
-          {
             name: "OCR",
             value: "ocr",
             description: "Extract text from images",
+          },
+          {
+            name: "PDF",
+            value: "pdf",
+            description: "Extract text from PDF documents",
           },
         ],
         description: "Scraping mode to use",
@@ -273,7 +276,7 @@ export class AlterLab implements INodeType {
         type: "string",
         typeOptions: { rows: 4 },
         default: "",
-        placeholder: '{"query": "{ user { id name } }"}',
+        placeholder: '{"query": "{ user { name email } }"}',
         displayOptions: {
           show: {
             resource: ["scrape"],
@@ -402,14 +405,6 @@ export class AlterLab implements INodeType {
         },
         options: [
           {
-            displayName: "Render JavaScript",
-            name: "renderJs",
-            type: "boolean",
-            default: false,
-            description:
-              "Whether to render JavaScript with a headless browser (forces Tier 4 minimum — no separate add-on charge)",
-          },
-          {
             displayName: "Auto-Detect JavaScript",
             name: "renderJsAuto",
             type: "boolean",
@@ -430,48 +425,7 @@ export class AlterLab implements INodeType {
               { name: "Block Images", value: "true" },
               { name: "Download Images", value: "false" },
             ],
-            description:
-              "Skip image downloads during browser rendering to reduce proxy bandwidth. Screenshots and PDFs always download images",
-          },
-          {
-            displayName: "Skip TLS Verification",
-            name: "skipTlsVerification",
-            type: "options",
-            default: "default",
-            options: [
-              {
-                name: "Default (Verify, Fall Back If Site Certificate Is Invalid)",
-                value: "default",
-              },
-              { name: "Skip Verification", value: "true" },
-              { name: "Always Require Valid Certificate", value: "false" },
-            ],
-            description:
-              "How to treat the target site's TLS certificate. Default verifies and retries without verification when the site's own certificate is invalid",
-          },
-          {
-            displayName: "Include Iframes",
-            name: "includeIframes",
-            type: "boolean",
-            default: false,
-            description:
-              "Whether to inline iframe content into the main document (requires Render JavaScript)",
-          },
-          {
-            displayName: "Flatten Shadow DOM",
-            name: "flattenShadowDom",
-            type: "boolean",
-            default: false,
-            description:
-              "Whether to flatten Shadow DOM roots so web components are visible to extraction (requires Render JavaScript)",
-          },
-          {
-            displayName: "Scroll Count",
-            name: "scrollCount",
-            type: "number",
-            default: 3,
-            typeOptions: { minValue: 1, maxValue: 10 },
-            description: "Number of scroll iterations when Scroll To Load is enabled (1-10)",
+            description: 'Skip image downloads during browser rendering to reduce proxy bandwidth. Screenshots and PDFs always download images.',
           },
           {
             displayName: "Browser Actions (JSON)",
@@ -484,59 +438,21 @@ export class AlterLab implements INodeType {
               "Array (max 20) of browser automation steps run after page load; requires Render JavaScript. Types: wait, wait_for, click, fill, press, scroll, infinite_scroll, screenshot, evaluate. Results are returned in actionResults",
           },
           {
-            displayName: "Session Headers (JSON)",
-            name: "sessionHeaders",
+            displayName: "Cookies (JSON)",
+            name: "cookies",
             type: "json",
             default: "",
-            placeholder: '{"Authorization": "Bearer ..."}',
+            placeholder: '{"cookie-name": "abc123", "token": "xyz"}',
             description:
-              "Inline authentication headers for one-off authenticated scraping (not stored)",
+              "Inline cookies for one-off authenticated scraping as a JSON object (mutually exclusive with Session ID)",
           },
           {
-            displayName: "Use Own Proxy (BYOP)",
-            name: "useOwnProxy",
+            displayName: "Flatten Shadow DOM",
+            name: "flattenShadowDom",
             type: "boolean",
             default: false,
             description:
-              "Whether to route through your own integrated proxy instead of AlterLab's system proxy",
-          },
-          {
-            displayName: "Proxy Integration ID",
-            name: "proxyIntegrationId",
-            type: "string",
-            default: "",
-            description:
-              "Specific proxy integration to use (requires Use Own Proxy)",
-          },
-          {
-            displayName: "Sticky Session",
-            name: "stickySession",
-            type: "string",
-            default: "",
-            placeholder: "my-checkout-flow",
-            description:
-              "Handle (letters, digits, - and _, max 128) that reuses captured cookies and, best-effort, the same exit IP across separate scrapes. Requires a paid plan",
-          },
-          {
-            displayName: "Sticky Session TTL (Seconds)",
-            name: "stickySessionTtl",
-            type: "number",
-            default: 1800,
-            typeOptions: { minValue: 300, maxValue: 7200 },
-            description: "How long the sticky-session cookie jar is retained (300-7200)",
-          },
-          {
-            displayName: "Screenshot",
-            name: "screenshot",
-            type: "boolean",
-            default: false,
-            description:
-              "Whether to capture a full-page screenshot (+$0.0002, requires Render JavaScript)",
-            displayOptions: {
-              show: {
-                renderJs: [true],
-              },
-            },
+              "Whether to flatten Shadow DOM roots so web components are visible to extraction (requires Render JavaScript)",
           },
           {
             displayName: "Generate PDF",
@@ -552,6 +468,81 @@ export class AlterLab implements INodeType {
             },
           },
           {
+            displayName: "Include Iframes",
+            name: "includeIframes",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to inline iframe content into the main document (requires Render JavaScript)",
+          },
+          {
+            displayName: "OCR",
+            name: "ocr",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to extract text from images using OCR (+$0.001, refunded if no images found)",
+          },
+          {
+            displayName: "Proxy Country",
+            name: "proxyCountry",
+            type: "string",
+            default: "",
+            placeholder: "US",
+            description:
+              "Preferred proxy country code for geo-targeting (e.g. US, DE, GB)",
+            displayOptions: {
+              show: {
+                useProxy: [true],
+              },
+            },
+          },
+          {
+            displayName: "Proxy Integration ID",
+            name: "proxyIntegrationId",
+            type: "string",
+            default: "",
+            description:
+              "Specific proxy integration to use (requires Use Own Proxy)",
+          },
+          {
+            displayName: "Remove Cookie Banners",
+            name: "removeCookieBanners",
+            type: "boolean",
+            default: true,
+            description:
+              "Whether to remove cookie consent banners before content extraction",
+          },
+          {
+            displayName: "Render JavaScript",
+            name: "renderJs",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to render JavaScript with a headless browser (forces Tier 4 minimum — no separate add-on charge)",
+          },
+          {
+            displayName: "Screenshot",
+            name: "screenshot",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to capture a full-page screenshot (+$0.0002, requires Render JavaScript)",
+            displayOptions: {
+              show: {
+                renderJs: [true],
+              },
+            },
+          },
+          {
+            displayName: "Scroll Count",
+            name: "scrollCount",
+            type: "number",
+            default: 3,
+            typeOptions: { minValue: 1, maxValue: 10 },
+            description: "Number of scroll iterations when Scroll To Load is enabled (1-10)",
+          },
+          {
             displayName: "Scroll To Load",
             name: "scrollToLoad",
             type: "boolean",
@@ -565,12 +556,71 @@ export class AlterLab implements INodeType {
             },
           },
           {
-            displayName: "OCR",
-            name: "ocr",
+            displayName: "Section Filter (JSON)",
+            name: "sectionFilter",
+            type: "json",
+            default: "",
+            placeholder:
+              '{"min_content_blocks": 1, "content_only": false, "exclude_content_types": ["image"]}',
+            description:
+              "Filter options for json_v2 section tree output. Only applies when json_v2 is in formats. Keys: min_content_blocks (int), content_only (bool), exclude_content_types (array of: paragraph, list, table, image, code, blockquote, dl, details).",
+          },
+          {
+            displayName: "Session Headers (JSON)",
+            name: "sessionHeaders",
+            type: "json",
+            default: "",
+            placeholder: '{"Authorization": "Bearer ..."}',
+            description:
+              "Inline authentication headers for one-off authenticated scraping (not stored)",
+          },
+          {
+            displayName: "Session ID",
+            name: "sessionId",
+            type: "string",
+            default: "",
+            placeholder: "e.g. a1b2c3d4-e5f6-...",
+            description:
+              "Use a stored session for authenticated scraping (UUID from Sessions resource)",
+          },
+          {
+            displayName: "Skip TLS Verification",
+            name: "skipTlsVerification",
+            type: "options",
+            default: "default",
+            options: [
+              {
+                name: "Default (Verify, Fall Back If Site Certificate Is Invalid)",
+                value: "default",
+              },
+              { name: "Skip Verification", value: "true" },
+              { name: "Always Require Valid Certificate", value: "false" },
+            ],
+            description: 'How to treat the target site\'s TLS certificate. Default verifies and retries without verification when the site\'s own certificate is invalid.',
+          },
+          {
+            displayName: "Sticky Session",
+            name: "stickySession",
+            type: "string",
+            default: "",
+            placeholder: "my-checkout-flow",
+            description: 'Handle (letters, digits, - and _, max 128) that reuses captured cookies and, best-effort, the same exit IP across separate scrapes. Requires a paid plan.',
+          },
+          {
+            displayName: "Sticky Session TTL (Seconds)",
+            name: "stickySessionTtl",
+            type: "number",
+            default: 1800,
+            typeOptions: { minValue: 300, maxValue: 7200 },
+            description: "How long the sticky-session cookie jar is retained (300-7200)",
+          },
+          {
+            displayName: "Use Own Proxy (BYOP)",
+            name: "useOwnProxy",
             type: "boolean",
             default: false,
             description:
-              "Whether to extract text from images using OCR (+$0.001, refunded if no images found)",
+              "Whether to route through your own integrated proxy instead of AlterLab's system proxy",
           },
           {
             displayName: "Use Proxy",
@@ -586,20 +636,6 @@ export class AlterLab implements INodeType {
             default: false,
             description:
               "Whether to override your default BYOP (Bring Your Own Proxy) integration and use AlterLab's system proxy for this request instead",
-          },
-          {
-            displayName: "Proxy Country",
-            name: "proxyCountry",
-            type: "string",
-            default: "",
-            placeholder: "US",
-            description:
-              "Preferred proxy country code for geo-targeting (e.g. US, DE, GB)",
-            displayOptions: {
-              show: {
-                useProxy: [true],
-              },
-            },
           },
           {
             displayName: "Wait Condition",
@@ -630,42 +666,6 @@ export class AlterLab implements INodeType {
               },
             },
           },
-          {
-            displayName: "Remove Cookie Banners",
-            name: "removeCookieBanners",
-            type: "boolean",
-            default: true,
-            description:
-              "Whether to remove cookie consent banners before content extraction",
-          },
-          {
-            displayName: "Cookies (JSON)",
-            name: "cookies",
-            type: "json",
-            default: "",
-            placeholder: '{"session-id": "abc123", "token": "xyz"}',
-            description:
-              "Inline cookies for one-off authenticated scraping as a JSON object (mutually exclusive with Session ID)",
-          },
-          {
-            displayName: "Section Filter (JSON)",
-            name: "sectionFilter",
-            type: "json",
-            default: "",
-            placeholder:
-              '{"min_content_blocks": 1, "content_only": false, "exclude_content_types": ["image"]}',
-            description:
-              "Filter options for json_v2 section tree output. Only applies when json_v2 is in formats. Keys: min_content_blocks (int), content_only (bool), exclude_content_types (array of: paragraph, list, table, image, code, blockquote, dl, details).",
-          },
-          {
-            displayName: "Session ID",
-            name: "sessionId",
-            type: "string",
-            default: "",
-            placeholder: "e.g. a1b2c3d4-e5f6-...",
-            description:
-              "Use a stored session for authenticated scraping (UUID from Sessions resource)",
-          },
         ],
       },
 
@@ -684,42 +684,39 @@ export class AlterLab implements INodeType {
         },
         options: [
           {
+            displayName: "Evidence",
+            name: "evidence",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to include provenance/evidence for extracted fields",
+          },
+          {
+            displayName: "Extraction Model",
+            name: "extractionModel",
+            type: "string",
+            default: "",
+            placeholder: "gpt-4o",
+            description:
+              "LLM model override for this request in provider-specific format (e.g. gpt-4o, claude-opus-4-5-20251101, llama3-70b-8192). Overrides the model configured on your BYOK key for this request only.",
+          },
+          {
             displayName: "Extraction Profile",
             name: "extractionProfile",
             type: "options",
             default: "auto",
             options: [
-              { name: "Auto", value: "auto" },
-              { name: "Product", value: "product" },
               { name: "Article", value: "article" },
-              { name: "Job Posting", value: "job_posting" },
-              { name: "FAQ", value: "faq" },
-              { name: "Recipe", value: "recipe" },
-              { name: "Event", value: "event" },
-              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
+              { name: "Auto", value: "auto" },
               { name: "Directory Listing", value: "directory_listing" },
+              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
+              { name: "Event", value: "event" },
+              { name: "FAQ", value: "faq" },
+              { name: "Job Posting", value: "job_posting" },
+              { name: "Product", value: "product" },
+              { name: "Recipe", value: "recipe" },
             ],
             description: "Pre-defined extraction profile for structured data",
-          },
-          {
-            displayName: "Extraction Template",
-            name: "extractionTemplate",
-            type: "options",
-            default: "",
-            options: [
-              { name: "None", value: "" },
-              { name: "Auto", value: "auto" },
-              { name: "Article", value: "article" },
-              { name: "Directory Listing", value: "directory_listing" },
-              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
-              { name: "Event", value: "event" },
-              { name: "FAQ", value: "faq" },
-              { name: "Job Posting", value: "job_posting" },
-              { name: "Product", value: "product" },
-              { name: "Recipe", value: "recipe" },
-            ],
-            description:
-              "Shorthand for Extraction Profile. Mutually exclusive with a non-Auto Extraction Profile",
           },
           {
             displayName: "Extraction Prompt",
@@ -732,6 +729,21 @@ export class AlterLab implements INodeType {
               "Natural language instructions for what data to extract",
           },
           {
+            displayName: "Extraction Provider",
+            name: "extractionProvider",
+            type: "options",
+            default: "",
+            options: [
+              { name: "Anthropic", value: "anthropic" },
+              { name: "Auto (Use Most Recent BYOK Key)", value: "" },
+              { name: "Groq", value: "groq" },
+              { name: "OpenAI", value: "openai" },
+              { name: "OpenRouter", value: "openrouter" },
+            ],
+            description:
+              "LLM provider to use for extraction. Selects the matching BYOK key registered at your AlterLab dashboard. When omitted, the most recently used registered key is used automatically.",
+          },
+          {
             displayName: "Extraction Schema (JSON)",
             name: "extractionSchema",
             type: "json",
@@ -740,28 +752,23 @@ export class AlterLab implements INodeType {
             description: "JSON Schema to filter and structure extracted data",
           },
           {
-            displayName: "Extraction Model",
-            name: "extractionModel",
-            type: "string",
-            default: "",
-            placeholder: "gpt-4o",
-            description:
-              "LLM model override for this request in provider-specific format (e.g. gpt-4o, claude-opus-4-5-20251101, llama3-70b-8192). Overrides the model configured on your BYOK key for this request only.",
-          },
-          {
-            displayName: "Extraction Provider",
-            name: "extractionProvider",
+            displayName: "Extraction Template",
+            name: "extractionTemplate",
             type: "options",
             default: "",
             options: [
-              { name: "Auto (use most recent BYOK key)", value: "" },
-              { name: "OpenAI", value: "openai" },
-              { name: "Anthropic", value: "anthropic" },
-              { name: "OpenRouter", value: "openrouter" },
-              { name: "Groq", value: "groq" },
+              { name: "Article", value: "article" },
+              { name: "Auto", value: "auto" },
+              { name: "Directory Listing", value: "directory_listing" },
+              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
+              { name: "Event", value: "event" },
+              { name: "FAQ", value: "faq" },
+              { name: "Job Posting", value: "job_posting" },
+              { name: "None", value: "" },
+              { name: "Product", value: "product" },
+              { name: "Recipe", value: "recipe" },
             ],
-            description:
-              "LLM provider to use for extraction. Selects the matching BYOK key registered at your AlterLab dashboard. When omitted, the most recently used registered key is used automatically.",
+            description: 'Shorthand for Extraction Profile. Mutually exclusive with a non-Auto Extraction Profile.',
           },
           {
             displayName: "Promote Schema.org",
@@ -770,14 +777,6 @@ export class AlterLab implements INodeType {
             default: true,
             description:
               "Whether to use Schema.org structured data as primary output when available",
-          },
-          {
-            displayName: "Evidence",
-            name: "evidence",
-            type: "boolean",
-            default: false,
-            description:
-              "Whether to include provenance/evidence for extracted fields",
           },
         ],
       },
@@ -796,13 +795,12 @@ export class AlterLab implements INodeType {
         },
         options: [
           {
-            displayName: "Max Spend",
-            name: "maxCredits",
-            type: "number",
-            default: 0,
-            typeOptions: { minValue: 0 },
+            displayName: "Fail Fast",
+            name: "failFast",
+            type: "boolean",
+            default: false,
             description:
-              "Maximum to spend per request in microcents (0 = no limit)",
+              "Whether to return an error instead of escalating to expensive tiers",
           },
           {
             displayName: "Force Tier",
@@ -820,6 +818,15 @@ export class AlterLab implements INodeType {
             description: "Force a specific scraping tier (skip escalation)",
           },
           {
+            displayName: "Max Spend",
+            name: "maxCredits",
+            type: "number",
+            default: 0,
+            typeOptions: { minValue: 0 },
+            description:
+              "Maximum to spend per request in microcents (0 = no limit)",
+          },
+          {
             displayName: "Max Tier",
             name: "maxTier",
             type: "options",
@@ -833,15 +840,6 @@ export class AlterLab implements INodeType {
               { name: "T4 Browser — $0.004", value: "4" },
             ],
             description: "Maximum tier to escalate to",
-          },
-          {
-            displayName: "Time Budget (Seconds)",
-            name: "timeBudget",
-            type: "number",
-            default: 0,
-            typeOptions: { minValue: 0, maxValue: 300 },
-            description:
-              "Wall-clock budget for the whole tier-escalation sequence (5-300s, 0 = no limit). Escalation stops when the remaining budget is too small",
           },
           {
             displayName: "Prefer Cost",
@@ -860,12 +858,12 @@ export class AlterLab implements INodeType {
               "Whether to optimize for speed (skip to reliable tier)",
           },
           {
-            displayName: "Fail Fast",
-            name: "failFast",
-            type: "boolean",
-            default: false,
-            description:
-              "Whether to return an error instead of escalating to expensive tiers",
+            displayName: "Time Budget (Seconds)",
+            name: "timeBudget",
+            type: "number",
+            default: 0,
+            typeOptions: { minValue: 0, maxValue: 300 },
+            description: 'Wall-clock budget for the whole tier-escalation sequence (5-300s, 0 = no limit). Escalation stops when the remaining budget is too small.',
           },
         ],
       },
@@ -891,13 +889,13 @@ export class AlterLab implements INodeType {
             default: "",
             options: [
               { name: "Default", value: "" },
-              { name: "application/json", value: "application/json" },
               {
-                name: "application/x-www-form-urlencoded",
+                name: "Form URL Encoded",
                 value: "application/x-www-form-urlencoded",
               },
-              { name: "text/plain", value: "text/plain" },
-              { name: "application/graphql", value: "application/graphql" },
+              { name: "GraphQL", value: "application/graphql" },
+              { name: "JSON", value: "application/json" },
+              { name: "Plain Text", value: "text/plain" },
             ],
             description: "Content-Type for the POST request body",
           },
@@ -907,8 +905,71 @@ export class AlterLab implements INodeType {
             type: "json",
             default: "",
             placeholder: '{"Accept-Language": "de-DE"}',
+            description: 'Headers (max 50) sent to the target URL. Hop-by-hop headers such as Host and Connection are rejected by the API.',
+          },
+          {
+            displayName: "Embeddings Chunk Overlap",
+            name: "embeddingsChunkOverlap",
+            type: "number",
+            default: 50,
+            typeOptions: { minValue: 0, maxValue: 2048 },
+            displayOptions: { show: { embeddingsEnabled: [true] } },
+            description: "Overlap between chunks in tokens (must be less than the chunk size)",
+          },
+          {
+            displayName: "Embeddings Chunk Size",
+            name: "embeddingsChunkSize",
+            type: "number",
+            default: 512,
+            typeOptions: { minValue: 64, maxValue: 8191 },
+            displayOptions: { show: { embeddingsEnabled: [true] } },
+            description: "Target chunk size in tokens (64-8191)",
+          },
+          {
+            displayName: "Embeddings Model",
+            name: "embeddingsModel",
+            type: "options",
+            default: "text-embedding-3-small",
+            options: [
+              {
+                name: "text-embedding-3-small",
+                value: "text-embedding-3-small",
+              },
+              {
+                name: "text-embedding-3-large",
+                value: "text-embedding-3-large",
+              },
+            ],
+            displayOptions: { show: { embeddingsEnabled: [true] } },
+            description: "Embedding model",
+          },
+          {
+            displayName: "Enable Scroll",
+            name: "enableScroll",
+            type: "options",
+            default: "default",
+            options: [
+              { name: "Auto", value: "default" },
+              { name: "Always Scroll", value: "true" },
+              { name: "Never Scroll", value: "false" },
+            ],
+            description: "Force scrolling for lazy-loaded images on or off",
+          },
+          {
+            displayName: "Filter Content",
+            name: "filterContent",
+            type: "boolean",
+            default: false,
             description:
-              "Headers (max 50) sent to the target URL. Hop-by-hop headers such as Host and Connection are rejected by the API",
+              "Whether to apply quality filtering to extracted content (default is lossless)",
+          },
+          {
+            displayName: "Generate Embeddings",
+            name: "embeddingsEnabled",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to chunk and embed the scraped text with OpenAI models (+$0.001 per page)",
           },
           {
             displayName: "Location Country",
@@ -929,32 +990,11 @@ export class AlterLab implements INodeType {
               "ISO 639-1 language for the Accept-Language header and browser locale",
           },
           {
-            displayName: "Wait For (CSS Selector)",
-            name: "waitFor",
+            displayName: "OCR Language",
+            name: "ocrLanguage",
             type: "string",
-            default: "",
-            placeholder: "#results",
-            description: "CSS selector to wait for before capturing the page",
-          },
-          {
-            displayName: "Filter Content",
-            name: "filterContent",
-            type: "boolean",
-            default: false,
-            description:
-              "Whether to apply quality filtering to extracted content (default is lossless)",
-          },
-          {
-            displayName: "Enable Scroll",
-            name: "enableScroll",
-            type: "options",
-            default: "default",
-            options: [
-              { name: "Auto", value: "default" },
-              { name: "Always Scroll", value: "true" },
-              { name: "Never Scroll", value: "false" },
-            ],
-            description: "Force scrolling for lazy-loaded images on or off",
+            default: "eng",
+            description: "Tesseract language code for OCR mode",
           },
           {
             displayName: "PDF Format",
@@ -968,20 +1008,11 @@ export class AlterLab implements INodeType {
             description: "Output format when scraping PDFs",
           },
           {
-            displayName: "OCR Language",
-            name: "ocrLanguage",
-            type: "string",
-            default: "eng",
-            description: "Tesseract language code for OCR mode",
-          },
-          {
-            displayName: "Webhook URL",
-            name: "webhookUrl",
-            type: "string",
-            default: "",
-            placeholder: "https://your-server.com/webhook",
-            description:
-              "Receive job.completed / job.failed events for this request (HTTPS required)",
+            displayName: "Submit Async (Return Job ID)",
+            name: "asyncSubmit",
+            type: "boolean",
+            default: false,
+            description: 'Whether to submit with sync=false and return the job ID and poll URL immediately instead of waiting for the result. Pair with a Webhook URL.',
           },
           {
             displayName: "Sync Policy",
@@ -1004,56 +1035,21 @@ export class AlterLab implements INodeType {
             description: "How long the API holds the request open in synchronous mode",
           },
           {
-            displayName: "Submit Async (Return Job ID)",
-            name: "asyncSubmit",
-            type: "boolean",
-            default: false,
+            displayName: "Wait For (CSS Selector)",
+            name: "waitFor",
+            type: "string",
+            default: "",
+            placeholder: "#results",
+            description: "CSS selector to wait for before capturing the page",
+          },
+          {
+            displayName: "Webhook URL",
+            name: "webhookUrl",
+            type: "string",
+            default: "",
+            placeholder: "https://your-server.com/webhook",
             description:
-              "Whether to submit with sync=false and return the job ID and poll URL immediately instead of waiting for the result. Pair with a Webhook URL",
-          },
-          {
-            displayName: "Generate Embeddings",
-            name: "embeddingsEnabled",
-            type: "boolean",
-            default: false,
-            description:
-              "Whether to chunk and embed the scraped text with OpenAI models (+$0.001 per page)",
-          },
-          {
-            displayName: "Embeddings Model",
-            name: "embeddingsModel",
-            type: "options",
-            default: "text-embedding-3-small",
-            options: [
-              {
-                name: "text-embedding-3-small",
-                value: "text-embedding-3-small",
-              },
-              {
-                name: "text-embedding-3-large",
-                value: "text-embedding-3-large",
-              },
-            ],
-            displayOptions: { show: { embeddingsEnabled: [true] } },
-            description: "Embedding model",
-          },
-          {
-            displayName: "Embeddings Chunk Size",
-            name: "embeddingsChunkSize",
-            type: "number",
-            default: 512,
-            typeOptions: { minValue: 64, maxValue: 8191 },
-            displayOptions: { show: { embeddingsEnabled: [true] } },
-            description: "Target chunk size in tokens (64-8191)",
-          },
-          {
-            displayName: "Embeddings Chunk Overlap",
-            name: "embeddingsChunkOverlap",
-            type: "number",
-            default: 50,
-            typeOptions: { minValue: 0, maxValue: 2048 },
-            displayOptions: { show: { embeddingsEnabled: [true] } },
-            description: "Overlap between chunks in tokens (must be less than the chunk size)",
+              "Receive job.completed / job.failed events for this request (HTTPS required)",
           },
         ],
       },
@@ -1084,7 +1080,7 @@ export class AlterLab implements INodeType {
         name: 'agent_profile',
         type: 'string',
         default: "",
-        description: 'Opt-in output profile for LLM agents.',
+        description: 'Opt-in output profile for LLM agents',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1098,7 +1094,7 @@ export class AlterLab implements INodeType {
         name: 'block_images',
         type: 'boolean',
         default: false,
-        description: 'Skip image downloads during browser rendering to reduce proxy bandwidth.',
+        description: 'Whether to skip image downloads during browser rendering to reduce proxy bandwidth',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1112,7 +1108,7 @@ export class AlterLab implements INodeType {
         name: 'body',
         type: 'string',
         default: "",
-        description: 'Request body to send with POST.',
+        description: 'Request body to send with POST',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1126,7 +1122,7 @@ export class AlterLab implements INodeType {
         name: 'cache_ttl',
         type: 'number',
         default: 0,
-        description: 'Cache TTL in seconds (60-86400).',
+        description: 'Cache TTL in seconds (60-86400)',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1140,7 +1136,7 @@ export class AlterLab implements INodeType {
         name: 'consent',
         type: 'options',
         default: "",
-        description: 'Consent overlay handling.',
+        description: 'Consent overlay handling',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1148,6 +1144,7 @@ export class AlterLab implements INodeType {
           },
         },
         options: [
+          { name: 'Default', value: '' },
           { name: 'Hide', value: 'hide' },
           { name: 'Accept', value: 'accept' },
           { name: 'Reject', value: 'reject' },
@@ -1159,7 +1156,7 @@ export class AlterLab implements INodeType {
         name: 'content_type',
         type: 'options',
         default: "",
-        description: 'Content-Type header for the request body.',
+        description: 'Content-Type header for the request body',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1167,10 +1164,11 @@ export class AlterLab implements INodeType {
           },
         },
         options: [
-          { name: 'Application/Json', value: 'application/json' },
-          { name: 'Application/X-Www-Form-Urlencoded', value: 'application/x-www-form-urlencoded' },
-          { name: 'Text/Plain', value: 'text/plain' },
-          { name: 'Application/Graphql', value: 'application/graphql' },
+          { name: 'Default', value: '' },
+          { name: 'Form URL Encoded', value: 'application/x-www-form-urlencoded' },
+          { name: 'GraphQL', value: 'application/graphql' },
+          { name: 'JSON', value: 'application/json' },
+          { name: 'Plain Text', value: 'text/plain' },
         ],
       },
 
@@ -1179,7 +1177,7 @@ export class AlterLab implements INodeType {
         name: 'cost_controls',
         type: 'json',
         default: "",
-        description: 'See AlterLab API docs for cost_controls.',
+        description: 'See AlterLab API docs for cost_controls',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1193,7 +1191,7 @@ export class AlterLab implements INodeType {
         name: 'embeddings',
         type: 'json',
         default: "",
-        description: 'Optional embeddings configuration.',
+        description: 'Optional embeddings configuration',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1207,7 +1205,7 @@ export class AlterLab implements INodeType {
         name: 'enable_scroll',
         type: 'boolean',
         default: false,
-        description: 'Force enable scrolling for lazy-load images.',
+        description: 'Whether to force-enable scrolling for lazy-load images',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1221,7 +1219,7 @@ export class AlterLab implements INodeType {
         name: 'extraction_model',
         type: 'string',
         default: "",
-        description: 'Per-request LLM model override in provider-specific format (e.',
+        description: 'Per-request LLM model override in provider-specific format (e',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1243,15 +1241,15 @@ export class AlterLab implements INodeType {
           },
         },
         options: [
-          { name: 'Auto', value: 'auto' },
-          { name: 'Product', value: 'product' },
           { name: 'Article', value: 'article' },
-          { name: 'Job_Posting', value: 'job_posting' },
-          { name: 'Faq', value: 'faq' },
-          { name: 'Recipe', value: 'recipe' },
-          { name: 'Event', value: 'event' },
-          { name: 'Ecommerce_Homepage', value: 'ecommerce_homepage' },
+          { name: 'Auto', value: 'auto' },
           { name: 'Directory_Listing', value: 'directory_listing' },
+          { name: 'Ecommerce_Homepage', value: 'ecommerce_homepage' },
+          { name: 'Event', value: 'event' },
+          { name: 'Faq', value: 'faq' },
+          { name: 'Job_Posting', value: 'job_posting' },
+          { name: 'Product', value: 'product' },
+          { name: 'Recipe', value: 'recipe' },
         ],
       },
 
@@ -1274,7 +1272,7 @@ export class AlterLab implements INodeType {
         name: 'extraction_provider',
         type: 'options',
         default: "",
-        description: 'LLM provider to use for extraction.',
+        description: 'LLM provider to use for extraction',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1282,10 +1280,11 @@ export class AlterLab implements INodeType {
           },
         },
         options: [
-          { name: 'Openai', value: 'openai' },
           { name: 'Anthropic', value: 'anthropic' },
-          { name: 'Openrouter', value: 'openrouter' },
+          { name: 'Default', value: '' },
           { name: 'Groq', value: 'groq' },
+          { name: 'Openai', value: 'openai' },
+          { name: 'Openrouter', value: 'openrouter' },
         ],
       },
 
@@ -1294,7 +1293,7 @@ export class AlterLab implements INodeType {
         name: 'extraction_schema',
         type: 'json',
         default: "",
-        description: 'JSON Schema for filtering extracted data.',
+        description: 'JSON Schema for filtering extracted data',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1308,7 +1307,7 @@ export class AlterLab implements INodeType {
         name: 'extraction_template',
         type: 'options',
         default: "",
-        description: 'Shorthand for extraction_profile.',
+        description: 'Shorthand for extraction_profile',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1316,15 +1315,16 @@ export class AlterLab implements INodeType {
           },
         },
         options: [
-          { name: 'Auto', value: 'auto' },
-          { name: 'Product', value: 'product' },
           { name: 'Article', value: 'article' },
-          { name: 'Job_Posting', value: 'job_posting' },
-          { name: 'Faq', value: 'faq' },
-          { name: 'Recipe', value: 'recipe' },
-          { name: 'Event', value: 'event' },
-          { name: 'Ecommerce_Homepage', value: 'ecommerce_homepage' },
+          { name: 'Auto', value: 'auto' },
+          { name: 'Default', value: '' },
           { name: 'Directory_Listing', value: 'directory_listing' },
+          { name: 'Ecommerce_Homepage', value: 'ecommerce_homepage' },
+          { name: 'Event', value: 'event' },
+          { name: 'Faq', value: 'faq' },
+          { name: 'Job_Posting', value: 'job_posting' },
+          { name: 'Product', value: 'product' },
+          { name: 'Recipe', value: 'recipe' },
         ],
       },
 
@@ -1333,7 +1333,7 @@ export class AlterLab implements INodeType {
         name: 'filter_content',
         type: 'boolean',
         default: false,
-        description: 'Apply quality filtering to extracted content.',
+        description: 'Whether to apply quality filtering to extracted content',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1347,7 +1347,7 @@ export class AlterLab implements INodeType {
         name: 'flatten_shadow_dom',
         type: 'boolean',
         default: false,
-        description: 'Flatten Shadow DOM roots into regular DOM for extraction (free, requires render_js).',
+        description: 'Whether to flatten Shadow DOM roots into the regular DOM for extraction (free, requires JS rendering)',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1361,7 +1361,7 @@ export class AlterLab implements INodeType {
         name: 'force_refresh',
         type: 'boolean',
         default: false,
-        description: 'Force fresh fetch even if cache=True.',
+        description: 'Whether to force a fresh fetch even when a cached result exists',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1375,7 +1375,7 @@ export class AlterLab implements INodeType {
         name: 'generate_pdf',
         type: 'boolean',
         default: false,
-        description: 'Generate PDF of rendered page (+$0.',
+        description: 'Whether to generate a PDF of the rendered page (extra cost applies)',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1389,7 +1389,7 @@ export class AlterLab implements INodeType {
         name: 'include_iframes',
         type: 'boolean',
         default: false,
-        description: 'Inline iframe content into the main document (free, requires render_js).',
+        description: 'Whether to inline iframe content into the main document (free, requires JS rendering)',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1403,7 +1403,7 @@ export class AlterLab implements INodeType {
         name: 'include_raw_html',
         type: 'boolean',
         default: false,
-        description: 'See AlterLab API docs for include_raw_html.',
+        description: 'Whether to include the raw HTML in the response',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1417,7 +1417,7 @@ export class AlterLab implements INodeType {
         name: 'location',
         type: 'json',
         default: "",
-        description: 'Geo-targeting parameters.',
+        description: 'Geo-targeting parameters',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1431,7 +1431,7 @@ export class AlterLab implements INodeType {
         name: 'markdown',
         type: 'boolean',
         default: false,
-        description: 'Extract content as Markdown (free)',
+        description: 'Whether to extract content as Markdown (free)',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1445,7 +1445,7 @@ export class AlterLab implements INodeType {
         name: 'max_age',
         type: 'number',
         default: 0,
-        description: 'Accept a stored result up to this many seconds old (0-86400).',
+        description: 'Accept a stored result up to this many seconds old (0-86400)',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1459,7 +1459,7 @@ export class AlterLab implements INodeType {
         name: 'max_response_bytes',
         type: 'number',
         default: 5242880,
-        description: 'Soft cap on raw response body size in bytes.',
+        description: 'Soft cap on raw response body size in bytes',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1473,7 +1473,7 @@ export class AlterLab implements INodeType {
         name: 'max_tokens',
         type: 'number',
         default: 0,
-        description: 'Token budget for the markdown format when agent_profile=\'agent\'.',
+        description: 'Token budget for the markdown format when agent_profile=\'agent\'',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1487,7 +1487,7 @@ export class AlterLab implements INodeType {
         name: 'method',
         type: 'options',
         default: "GET",
-        description: 'HTTP method to use when fetching the target URL.',
+        description: 'HTTP method to use when fetching the target URL',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1505,7 +1505,7 @@ export class AlterLab implements INodeType {
         name: 'ocr_language',
         type: 'string',
         default: "eng",
-        description: 'See AlterLab API docs for ocr_language.',
+        description: 'See AlterLab API docs for ocr_language',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1519,7 +1519,7 @@ export class AlterLab implements INodeType {
         name: 'pdf_format',
         type: 'string',
         default: "markdown",
-        description: 'See AlterLab API docs for pdf_format.',
+        description: 'See AlterLab API docs for pdf_format',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1533,7 +1533,7 @@ export class AlterLab implements INodeType {
         name: 'promote_schema_org',
         type: 'boolean',
         default: true,
-        description: 'Use Schema.',
+        description: 'Whether to promote Schema.org structured data into the extracted result',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1547,7 +1547,7 @@ export class AlterLab implements INodeType {
         name: 'proxy_country',
         type: 'string',
         default: "",
-        description: 'Preferred proxy country code (e.',
+        description: 'Preferred proxy country code (e',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1557,7 +1557,7 @@ export class AlterLab implements INodeType {
       },
 
       {
-        displayName: 'Proxy Integration Id',
+        displayName: 'Proxy Integration ID',
         name: 'proxy_integration_id',
         type: 'string',
         default: "",
@@ -1575,7 +1575,7 @@ export class AlterLab implements INodeType {
         name: 'remove_cookie_banners',
         type: 'boolean',
         default: true,
-        description: 'Remove cookie consent banners from HTML before content extraction and hide consent overlays on the live page before scre',
+        description: 'Whether to remove cookie consent banners from the HTML before extraction and hide consent overlays on the live page before screenshots',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1589,7 +1589,7 @@ export class AlterLab implements INodeType {
         name: 'render_js',
         type: 'json',
         default: false,
-        description: 'Render JavaScript using headless browser (forces Tier 4 minimum).',
+        description: 'Render JavaScript using headless browser (forces Tier 4 minimum)',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1603,7 +1603,7 @@ export class AlterLab implements INodeType {
         name: 'scroll_count',
         type: 'number',
         default: 3,
-        description: 'Number of scroll iterations when scroll_to_load is enabled (1-10, default 3).',
+        description: 'Number of scroll iterations when scroll_to_load is enabled (1-10, default 3)',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1617,7 +1617,7 @@ export class AlterLab implements INodeType {
         name: 'scroll_to_load',
         type: 'boolean',
         default: false,
-        description: 'Scroll page to trigger lazy-loaded content (requires render_js).',
+        description: 'Whether to scroll the page to trigger lazy-loaded content (requires JS rendering)',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1631,7 +1631,7 @@ export class AlterLab implements INodeType {
         name: 'section_filter',
         type: 'json',
         default: "",
-        description: 'Filter options for json_v2 section tree output.',
+        description: 'Filter options for json_v2 section tree output',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1645,7 +1645,7 @@ export class AlterLab implements INodeType {
         name: 'session_headers',
         type: 'json',
         default: "",
-        description: 'Inline auth headers (e.',
+        description: 'Inline auth headers (e',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1655,11 +1655,11 @@ export class AlterLab implements INodeType {
       },
 
       {
-        displayName: 'Session Id',
+        displayName: 'Session ID',
         name: 'session_id',
         type: 'string',
         default: "",
-        description: 'Reference to a stored SessionIntegration.',
+        description: 'Reference to a stored SessionIntegration',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1673,7 +1673,7 @@ export class AlterLab implements INodeType {
         name: 'skip_tls_verification',
         type: 'boolean',
         default: false,
-        description: 'TLS certificate verification for the target.',
+        description: 'Whether to skip TLS certificate verification for the target',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1687,7 +1687,7 @@ export class AlterLab implements INodeType {
         name: 'sticky_session',
         type: 'string',
         default: "",
-        description: 'Customer-facing sticky-session handle.',
+        description: 'Customer-facing sticky-session handle',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1701,7 +1701,7 @@ export class AlterLab implements INodeType {
         name: 'sticky_session_ttl',
         type: 'number',
         default: 0,
-        description: 'Sticky-session lifetime in seconds (300–7200, default 1800).',
+        description: 'Sticky-session lifetime in seconds (300–7200, default 1800)',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1715,7 +1715,7 @@ export class AlterLab implements INodeType {
         name: 'sync_policy',
         type: 'options',
         default: "auto",
-        description: 'Synchronous wait policy.',
+        description: 'Synchronous wait policy',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1733,7 +1733,7 @@ export class AlterLab implements INodeType {
         name: 'use_own_proxy',
         type: 'boolean',
         default: false,
-        description: 'Use your own integrated proxy instead of system proxy ($0.',
+        description: 'Whether to route through your own integrated proxy instead of the AlterLab system proxy',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1747,7 +1747,7 @@ export class AlterLab implements INodeType {
         name: 'use_proxy',
         type: 'boolean',
         default: false,
-        description: 'Route request through premium proxy (+$0.',
+        description: 'Whether to route the request through a premium proxy (extra cost applies)',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1761,7 +1761,7 @@ export class AlterLab implements INodeType {
         name: 'use_system_proxy',
         type: 'boolean',
         default: false,
-        description: 'Override your default proxy integration and use AlterLab\'s system proxy instead',
+        description: 'Whether to override your default proxy integration and use the AlterLab system proxy instead',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1789,7 +1789,7 @@ export class AlterLab implements INodeType {
         name: 'wait_for',
         type: 'string',
         default: "",
-        description: 'See AlterLab API docs for wait_for.',
+        description: 'See AlterLab API docs for wait_for',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1803,7 +1803,7 @@ export class AlterLab implements INodeType {
         name: 'wait_until',
         type: 'string',
         default: "networkidle",
-        description: 'See AlterLab API docs for wait_until.',
+        description: 'See AlterLab API docs for wait_until',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1817,7 +1817,7 @@ export class AlterLab implements INodeType {
         name: 'response',
         type: 'options',
         default: "",
-        description: 'Response shape.',
+        description: 'Response shape',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1825,6 +1825,7 @@ export class AlterLab implements INodeType {
           },
         },
         options: [
+          { name: 'Default', value: '' },
           { name: 'Full', value: 'full' },
           { name: 'Minimal', value: 'minimal' },
         ],
@@ -1835,7 +1836,7 @@ export class AlterLab implements INodeType {
         name: 'extraction_selectors',
         type: 'json',
         default: "",
-        description: 'Deterministic field extraction: {field: {css|xpath, attr?, multiple?}} evaluated on the fetched HTML.',
+        description: 'Deterministic field extraction: {field: {css|xpath, attr?, multiple?}} evaluated on the fetched HTML',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1849,7 +1850,7 @@ export class AlterLab implements INodeType {
         name: 'tag',
         type: 'string',
         default: "",
-        description: 'Optional spend-attribution tag (^[a-z0-9][a-z0-9_.',
+        description: 'Optional spend-attribution tag (^[a-z0-9][a-z0-9_',
         displayOptions: {
           show: {
             resource: ['scrape'],
@@ -1872,30 +1873,10 @@ export class AlterLab implements INodeType {
         },
         options: [
           {
-            name: "Start Crawl",
-            value: "start",
-            description:
-              "Start a new crawl and wait for it to complete (polling included)",
-            action: "Start a crawl",
-          },
-          {
-            name: "Get Status",
-            value: "status",
-            description: "Get the status and results of a crawl by ID",
-            action: "Get crawl status",
-          },
-          {
             name: "Cancel",
             value: "cancel",
             description: "Cancel a running crawl and refund unused credits",
             action: "Cancel a crawl",
-          },
-          {
-            name: "Resume",
-            value: "resume",
-            description:
-              "Retry failed (and optionally cancelled) pages of a crawl and add extra URLs",
-            action: "Resume a crawl",
           },
           {
             name: "Export",
@@ -1905,13 +1886,32 @@ export class AlterLab implements INodeType {
             action: "Export crawl results",
           },
           {
+            name: "Get Status",
+            value: "status",
+            description: "Get the status and results of a crawl by ID",
+            action: "Get crawl status",
+          },
+          {
             name: "List",
             value: "list",
             description: "List your crawls (active and historical)",
             action: "List crawls",
           },
+          {
+            name: "Resume",
+            value: "resume",
+            description:
+              "Retry failed (and optionally cancelled) pages of a crawl and add extra URLs",
+            action: "Resume a crawl",
+          },
+          {
+            name: "Start Crawl",
+            value: "start",
+            description:
+              "Start a new crawl and wait for it to complete (polling included)",
+            action: "Start a crawl",
+          },
         ],
-        description: "The crawl operation to perform",
       },
 
       // ── Crawl ID (status / cancel) ──────────────────────
@@ -2013,14 +2013,14 @@ export class AlterLab implements INodeType {
             type: "options",
             default: "succeeded",
             options: [
-              { name: "Succeeded", value: "succeeded" },
-              { name: "Failed", value: "failed" },
-              { name: "Rejected", value: "rejected" },
-              { name: "Expired", value: "expired" },
-              { name: "Queued", value: "queued" },
-              { name: "Processing", value: "processing" },
-              { name: "Cancelled", value: "cancelled" },
               { name: "All", value: "all" },
+              { name: "Cancelled", value: "cancelled" },
+              { name: "Expired", value: "expired" },
+              { name: "Failed", value: "failed" },
+              { name: "Processing", value: "processing" },
+              { name: "Queued", value: "queued" },
+              { name: "Rejected", value: "rejected" },
+              { name: "Succeeded", value: "succeeded" },
             ],
             description: "Only export pages with this status",
           },
@@ -2050,9 +2050,9 @@ export class AlterLab implements INodeType {
             displayName: "Limit",
             name: "limit",
             type: "number",
-            default: 20,
+            default: 50,
             typeOptions: { minValue: 1, maxValue: 100 },
-            description: "Max crawls to return (1-100)",
+            description: "Max number of results to return",
           },
           {
             displayName: "Offset",
@@ -2069,12 +2069,12 @@ export class AlterLab implements INodeType {
             default: "",
             options: [
               { name: "Any", value: "" },
-              { name: "Discovering", value: "discovering" },
-              { name: "Scraping", value: "scraping" },
-              { name: "Completed", value: "completed" },
-              { name: "Partial", value: "partial" },
-              { name: "Failed", value: "failed" },
               { name: "Cancelled", value: "cancelled" },
+              { name: "Completed", value: "completed" },
+              { name: "Discovering", value: "discovering" },
+              { name: "Failed", value: "failed" },
+              { name: "Partial", value: "partial" },
+              { name: "Scraping", value: "scraping" },
             ],
             description: "Filter by crawl status",
           },
@@ -2103,21 +2103,173 @@ export class AlterLab implements INodeType {
         },
         options: [
           {
-            displayName: "Max Pages",
-            name: "maxPages",
-            type: "number",
-            default: 50,
-            typeOptions: { minValue: 1, maxValue: 100000 },
-            description: "Maximum number of pages to scrape (1-100000)",
+            displayName: "Auto Extraction",
+            name: "extractionAuto",
+            type: "boolean",
+            default: false,
+            description: 'Whether to auto-detect the page type and extract structured data without a schema (extraction=auto). Mutually exclusive with Extraction Schema.',
           },
           {
-            displayName: "Max Depth",
-            name: "maxDepth",
+            displayName: "Cache",
+            name: "cache",
+            type: "boolean",
+            default: false,
+            description: "Whether per-URL results may be served from cache",
+          },
+          {
+            displayName: "Cache TTL (Seconds)",
+            name: "cacheTtl",
             type: "number",
-            default: 3,
-            typeOptions: { minValue: 0, maxValue: 20 },
+            default: 3600,
+            typeOptions: { minValue: 60, maxValue: 86400 },
+            displayOptions: { show: { cache: [true] } },
+            description: "Cache time-to-live in seconds (60-86400)",
+          },
+          {
+            displayName: "Change Tracking (JSON)",
+            name: "changeTracking",
+            type: "json",
+            default: "",
+            placeholder: '{"enabled": true, "tracking_id": "weekly-docs"}',
             description:
-              "Maximum link-following depth from start URL (0 = start page only)",
+              "Detect new, changed, unchanged and removed pages versus the previous crawl with the same tracking_id",
+          },
+          {
+            displayName: "Custom Headers (JSON)",
+            name: "headers",
+            type: "json",
+            default: "",
+            placeholder: '{"Authorization": "Bearer ..."}',
+            description: "Headers (max 50) injected into every page request",
+          },
+          {
+            displayName: "Delay Between Requests (Seconds)",
+            name: "delay",
+            type: "number",
+            default: 0,
+            typeOptions: { minValue: 0, maxValue: 30 },
+            description: "Minimum seconds between requests to the same domain",
+          },
+          {
+            displayName: "Depth Strategy",
+            name: "depthStrategy",
+            type: "options",
+            default: "sequential",
+            options: [
+              {
+                name: "Sequential",
+                value: "sequential",
+                description: "Finish each depth before starting the next (deterministic)",
+              },
+              {
+                name: "Eager",
+                value: "eager",
+                description: "Start the next depth as soon as any job finishes (faster)",
+              },
+            ],
+            description: "How crawl depth levels are scheduled",
+          },
+          {
+            displayName: "Exclude Patterns",
+            name: "excludePatterns",
+            type: "string",
+            default: "",
+            placeholder: "/admin/*,/login",
+            description:
+              "Comma-separated glob patterns — skip URLs matching any",
+          },
+          {
+            displayName: "Extraction Model",
+            name: "extractionModel",
+            type: "string",
+            default: "",
+            placeholder: "gpt-4o",
+            description:
+              "LLM model override for each crawled page in provider-specific format (e.g. gpt-4o, claude-opus-4-5-20251101, llama3-70b-8192). Overrides the model configured on your BYOK key.",
+          },
+          {
+            displayName: "Extraction Profile",
+            name: "extractionProfile",
+            type: "options",
+            default: "",
+            options: [
+              { name: "Article", value: "article" },
+              { name: "Auto", value: "auto" },
+              { name: "Directory Listing", value: "directory_listing" },
+              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
+              { name: "Event", value: "event" },
+              { name: "FAQ", value: "faq" },
+              { name: "Job Posting", value: "job_posting" },
+              { name: "None", value: "" },
+              { name: "Product", value: "product" },
+              { name: "Recipe", value: "recipe" },
+            ],
+            description: "Pre-defined extraction profile for each page",
+          },
+          {
+            displayName: "Extraction Provider",
+            name: "extractionProvider",
+            type: "options",
+            default: "",
+            options: [
+              { name: "Anthropic", value: "anthropic" },
+              { name: "Auto (Use Most Recent BYOK Key)", value: "" },
+              { name: "Groq", value: "groq" },
+              { name: "OpenAI", value: "openai" },
+              { name: "OpenRouter", value: "openrouter" },
+            ],
+            description:
+              "LLM provider to use for extraction on each crawled page. Selects the matching BYOK key registered at your AlterLab dashboard.",
+          },
+          {
+            displayName: "Extraction Schema (JSON)",
+            name: "extractionSchema",
+            type: "json",
+            default: "",
+            description: "JSON schema for structured extraction on each page",
+          },
+          {
+            displayName: "Extraction Template",
+            name: "extractionTemplate",
+            type: "options",
+            default: "",
+            options: [
+              { name: "Article", value: "article" },
+              { name: "Auto", value: "auto" },
+              { name: "Directory Listing", value: "directory_listing" },
+              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
+              { name: "Event", value: "event" },
+              { name: "FAQ", value: "faq" },
+              { name: "Job Posting", value: "job_posting" },
+              { name: "None", value: "" },
+              { name: "Product", value: "product" },
+              { name: "Recipe", value: "recipe" },
+            ],
+            description:
+              "Shorthand for Extraction Profile (mutually exclusive with it)",
+          },
+          {
+            displayName: "Force Refresh",
+            name: "forceRefresh",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to bypass and invalidate cached entries (use with Cache)",
+          },
+          {
+            displayName: "Force Tier",
+            name: "forceTier",
+            type: "options",
+            default: "",
+            options: [
+              { name: "None", value: "" },
+              { name: "T1 Curl", value: "1" },
+              { name: "T2 HTTP", value: "2" },
+              { name: "T3 Stealth", value: "3" },
+              { name: "T3.5 Light JS", value: "3.5" },
+              { name: "T4 Browser", value: "4" },
+            ],
+            description: "Force a specific tier for every page (skips escalation)",
           },
           {
             displayName: "Formats",
@@ -2145,38 +2297,87 @@ export class AlterLab implements INodeType {
               "Comma-separated glob patterns — only scrape URLs matching at least one",
           },
           {
-            displayName: "Exclude Patterns",
-            name: "excludePatterns",
-            type: "string",
-            default: "",
-            placeholder: "/admin/*,/login",
-            description:
-              "Comma-separated glob patterns — skip URLs matching any",
+            displayName: "Include Subdomains",
+            name: "includeSubdomains",
+            type: "boolean",
+            default: false,
+            description: "Whether to follow links to subdomains",
           },
           {
-            displayName: "Sitemap Mode",
-            name: "sitemap",
+            displayName: "Max Concurrency",
+            name: "maxConcurrency",
+            type: "number",
+            default: 10,
+            typeOptions: { minValue: 1, maxValue: 50 },
+            description: "Maximum concurrent pages to scrape simultaneously",
+          },
+          {
+            displayName: "Max Depth",
+            name: "maxDepth",
+            type: "number",
+            default: 3,
+            typeOptions: { minValue: 0, maxValue: 20 },
+            description:
+              "Maximum link-following depth from start URL (0 = start page only)",
+          },
+          {
+            displayName: "Max Pages",
+            name: "maxPages",
+            type: "number",
+            default: 50,
+            typeOptions: { minValue: 1, maxValue: 100000 },
+            description: "Maximum number of pages to scrape (1-100000)",
+          },
+          {
+            displayName: "Max Spend",
+            name: "maxCredits",
+            type: "number",
+            default: 0,
+            typeOptions: { minValue: 0 },
+            description: "Maximum total credits to spend on the crawl (0 = no limit)",
+          },
+          {
+            displayName: "Max Tier",
+            name: "maxTier",
             type: "options",
-            default: "include",
+            default: "",
             options: [
-              {
-                name: "Include (Default)",
-                value: "include",
-                description: "Parse sitemap and follow links",
-              },
-              {
-                name: "Skip",
-                value: "skip",
-                description: "Skip sitemap, discover via links only",
-              },
-              {
-                name: "Only",
-                value: "only",
-                description:
-                  "Crawl exclusively from sitemap — no link extraction",
-              },
+              { name: "None", value: "" },
+              { name: "T1 Curl", value: "1" },
+              { name: "T2 HTTP", value: "2" },
+              { name: "T3 Stealth", value: "3" },
+              { name: "T3.5 Light JS", value: "3.5" },
+              { name: "T4 Browser", value: "4" },
             ],
-            description: "Sitemap discovery mode",
+            description:
+              "Highest tier used for page scrapes (cannot be combined with Render JavaScript = Yes below T4)",
+          },
+          {
+            displayName: "Output Connector (JSON)",
+            name: "output",
+            type: "json",
+            default: "",
+            placeholder: '{"type": "s3", "bucket": "my-bucket", "credentials": {...}}',
+            description:
+              "Deliver results to s3, gcs or a streaming webhook as pages complete (type: s3 | gcs | webhook_stream)",
+          },
+          {
+            displayName: "Per-Path Page Budget (JSON)",
+            name: "budget",
+            type: "json",
+            default: "",
+            placeholder: '{"/products/*": 100, "/blog/*": 50, "*": 5}',
+            description:
+              "Max pages per URL path glob; the longest matching pattern wins and * is the catch-all",
+          },
+          {
+            displayName: "Priority (JSON)",
+            name: "priority",
+            type: "json",
+            default: "",
+            placeholder: '{"keywords": ["pricing"], "boost": ["/docs/*"], "demote": ["/tag/*"]}',
+            description:
+              "Content-aware URL prioritisation: keywords, boost and demote patterns",
           },
           {
             displayName: "Render JavaScript",
@@ -2204,163 +2405,11 @@ export class AlterLab implements INodeType {
             description: "JavaScript rendering mode for crawled pages",
           },
           {
-            displayName: "Use Proxy",
-            name: "useProxy",
-            type: "boolean",
-            default: false,
-            description:
-              "Whether to route all crawl requests through premium proxy",
-          },
-          {
-            displayName: "Max Concurrency",
-            name: "maxConcurrency",
-            type: "number",
-            default: 10,
-            typeOptions: { minValue: 1, maxValue: 50 },
-            description: "Maximum concurrent pages to scrape simultaneously",
-          },
-          {
-            displayName: "Delay Between Requests (Seconds)",
-            name: "delay",
-            type: "number",
-            default: 0,
-            typeOptions: { minValue: 0, maxValue: 30 },
-            description: "Minimum seconds between requests to the same domain",
-          },
-          {
-            displayName: "Timeout Per Page (Seconds)",
-            name: "timeout",
-            type: "number",
-            default: 90,
-            typeOptions: { minValue: 1, maxValue: 300 },
-            description: "Timeout per page in seconds",
-          },
-          {
-            displayName: "Sitemap Path",
-            name: "sitemapPath",
-            type: "string",
-            default: "",
-            placeholder: "/product-sitemap.xml",
-            description: "Custom sitemap path (must start with /)",
-          },
-          {
-            displayName: "Per-Path Page Budget (JSON)",
-            name: "budget",
-            type: "json",
-            default: "",
-            placeholder: '{"/products/*": 100, "/blog/*": 50, "*": 5}',
-            description:
-              "Max pages per URL path glob; the longest matching pattern wins and * is the catch-all",
-          },
-          {
-            displayName: "Priority (JSON)",
-            name: "priority",
-            type: "json",
-            default: "",
-            placeholder: '{"keywords": ["pricing"], "boost": ["/docs/*"], "demote": ["/tag/*"]}',
-            description:
-              "Content-aware URL prioritisation: keywords, boost and demote patterns",
-          },
-          {
-            displayName: "Custom Headers (JSON)",
-            name: "headers",
-            type: "json",
-            default: "",
-            placeholder: '{"Authorization": "Bearer ..."}',
-            description: "Headers (max 50) injected into every page request",
-          },
-          {
-            displayName: "Auto Extraction",
-            name: "extractionAuto",
-            type: "boolean",
-            default: false,
-            description:
-              "Whether to auto-detect the page type and extract structured data without a schema (extraction=auto). Mutually exclusive with Extraction Schema",
-          },
-          {
-            displayName: "Extraction Schema (JSON)",
-            name: "extractionSchema",
-            type: "json",
-            default: "",
-            description: "JSON schema for structured extraction on each page",
-          },
-          {
-            displayName: "Extraction Profile",
-            name: "extractionProfile",
-            type: "options",
-            default: "",
-            options: [
-              { name: "None", value: "" },
-              { name: "Auto", value: "auto" },
-              { name: "Article", value: "article" },
-              { name: "Directory Listing", value: "directory_listing" },
-              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
-              { name: "Event", value: "event" },
-              { name: "FAQ", value: "faq" },
-              { name: "Job Posting", value: "job_posting" },
-              { name: "Product", value: "product" },
-              { name: "Recipe", value: "recipe" },
-            ],
-            description: "Pre-defined extraction profile for each page",
-          },
-          {
-            displayName: "Extraction Template",
-            name: "extractionTemplate",
-            type: "options",
-            default: "",
-            options: [
-              { name: "None", value: "" },
-              { name: "Auto", value: "auto" },
-              { name: "Article", value: "article" },
-              { name: "Directory Listing", value: "directory_listing" },
-              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
-              { name: "Event", value: "event" },
-              { name: "FAQ", value: "faq" },
-              { name: "Job Posting", value: "job_posting" },
-              { name: "Product", value: "product" },
-              { name: "Recipe", value: "recipe" },
-            ],
-            description:
-              "Shorthand for Extraction Profile (mutually exclusive with it)",
-          },
-          {
             displayName: "Respect Robots.txt",
             name: "respectRobots",
             type: "boolean",
             default: true,
             description: "Whether to respect robots.txt rules for the target domain",
-          },
-          {
-            displayName: "Include Subdomains",
-            name: "includeSubdomains",
-            type: "boolean",
-            default: false,
-            description: "Whether to follow links to subdomains",
-          },
-          {
-            displayName: "Change Tracking (JSON)",
-            name: "changeTracking",
-            type: "json",
-            default: "",
-            placeholder: '{"enabled": true, "tracking_id": "weekly-docs"}',
-            description:
-              "Detect new, changed, unchanged and removed pages versus the previous crawl with the same tracking_id",
-          },
-          {
-            displayName: "Webhook URL",
-            name: "webhookUrl",
-            type: "string",
-            default: "",
-            description: "Notified once when the crawl finishes (legacy; prefer Webhook Config)",
-          },
-          {
-            displayName: "Webhook Config (JSON)",
-            name: "webhook",
-            type: "json",
-            default: "",
-            placeholder: '{"url": "https://example.com/hook", "events": ["crawl.completed"], "secret": "..."}',
-            description:
-              "Real-time event delivery with event filtering, HMAC signing and metadata. Takes precedence over Webhook URL",
           },
           {
             displayName: "Screenshot Every Page",
@@ -2370,78 +2419,37 @@ export class AlterLab implements INodeType {
             description: "Whether to capture a screenshot of every crawled page",
           },
           {
-            displayName: "Wait For (CSS Selector)",
-            name: "waitFor",
+            displayName: "Sitemap Mode",
+            name: "sitemap",
+            type: "options",
+            default: "include",
+            options: [
+              {
+                name: "Include (Default)",
+                value: "include",
+                description: "Parse sitemap and follow links",
+              },
+              {
+                name: "Skip",
+                value: "skip",
+                description: "Skip sitemap, discover via links only",
+              },
+              {
+                name: "Only",
+                value: "only",
+                description:
+                  "Crawl exclusively from sitemap — no link extraction",
+              },
+            ],
+            description: "Sitemap discovery mode",
+          },
+          {
+            displayName: "Sitemap Path",
+            name: "sitemapPath",
             type: "string",
             default: "",
-            description: "CSS selector to wait for on each page",
-          },
-          {
-            displayName: "Depth Strategy",
-            name: "depthStrategy",
-            type: "options",
-            default: "sequential",
-            options: [
-              {
-                name: "Sequential",
-                value: "sequential",
-                description: "Finish each depth before starting the next (deterministic)",
-              },
-              {
-                name: "Eager",
-                value: "eager",
-                description: "Start the next depth as soon as any job finishes (faster)",
-              },
-            ],
-            description: "How crawl depth levels are scheduled",
-          },
-          {
-            displayName: "Max Spend",
-            name: "maxCredits",
-            type: "number",
-            default: 0,
-            typeOptions: { minValue: 0 },
-            description: "Maximum total credits to spend on the crawl (0 = no limit)",
-          },
-          {
-            displayName: "Max Tier",
-            name: "maxTier",
-            type: "options",
-            default: "",
-            options: [
-              { name: "None", value: "" },
-              { name: "T1 Curl", value: "1" },
-              { name: "T2 HTTP", value: "2" },
-              { name: "T3 Stealth", value: "3" },
-              { name: "T3.5 Light JS", value: "3.5" },
-              { name: "T4 Browser", value: "4" },
-            ],
-            description:
-              "Highest tier used for page scrapes (cannot be combined with Render JavaScript = Yes below T4)",
-          },
-          {
-            displayName: "Force Tier",
-            name: "forceTier",
-            type: "options",
-            default: "",
-            options: [
-              { name: "None", value: "" },
-              { name: "T1 Curl", value: "1" },
-              { name: "T2 HTTP", value: "2" },
-              { name: "T3 Stealth", value: "3" },
-              { name: "T3.5 Light JS", value: "3.5" },
-              { name: "T4 Browser", value: "4" },
-            ],
-            description: "Force a specific tier for every page (skips escalation)",
-          },
-          {
-            displayName: "Output Connector (JSON)",
-            name: "output",
-            type: "json",
-            default: "",
-            placeholder: '{"type": "s3", "bucket": "my-bucket", "credentials": {...}}',
-            description:
-              "Deliver results to s3, gcs or a streaming webhook as pages complete (type: s3 | gcs | webhook_stream)",
+            placeholder: "/product-sitemap.xml",
+            description: "Custom sitemap path (must start with /)",
           },
           {
             displayName: "Storage Backend",
@@ -2453,32 +2461,30 @@ export class AlterLab implements INodeType {
               { name: "S3", value: "s3" },
               { name: "R2", value: "r2" },
             ],
-            description:
-              "Where results are stored. s3/r2 return a presigned download URL (30-day retention)",
+            description: 'Where results are stored. s3/r2 return a presigned download URL (30-day retention).',
           },
           {
-            displayName: "Cache",
-            name: "cache",
-            type: "boolean",
-            default: false,
-            description: "Whether per-URL results may be served from cache",
-          },
-          {
-            displayName: "Cache TTL (Seconds)",
-            name: "cacheTtl",
+            displayName: "Timeout Per Page (Seconds)",
+            name: "timeout",
             type: "number",
-            default: 3600,
-            typeOptions: { minValue: 60, maxValue: 86400 },
-            displayOptions: { show: { cache: [true] } },
-            description: "Cache time-to-live in seconds (60-86400)",
+            default: 90,
+            typeOptions: { minValue: 1, maxValue: 300 },
+            description: "Timeout per page in seconds",
           },
           {
-            displayName: "Force Refresh",
-            name: "forceRefresh",
+            displayName: "Use Proxy",
+            name: "useProxy",
             type: "boolean",
             default: false,
             description:
-              "Whether to bypass and invalidate cached entries (use with Cache)",
+              "Whether to route all crawl requests through premium proxy",
+          },
+          {
+            displayName: "Wait For (CSS Selector)",
+            name: "waitFor",
+            type: "string",
+            default: "",
+            description: "CSS selector to wait for on each page",
           },
           {
             displayName: "Wait For Poll (Seconds)",
@@ -2490,28 +2496,19 @@ export class AlterLab implements INodeType {
               "How long to wait for the crawl to complete before timing out (10-3600s)",
           },
           {
-            displayName: "Extraction Model",
-            name: "extractionModel",
-            type: "string",
+            displayName: "Webhook Config (JSON)",
+            name: "webhook",
+            type: "json",
             default: "",
-            placeholder: "gpt-4o",
-            description:
-              "LLM model override for each crawled page in provider-specific format (e.g. gpt-4o, claude-opus-4-5-20251101, llama3-70b-8192). Overrides the model configured on your BYOK key.",
+            placeholder: '{"url": "https://example.com/hook", "events": ["crawl.completed"], "secret": "..."}',
+            description: 'Real-time event delivery with event filtering, HMAC signing and metadata. Takes precedence over Webhook URL.',
           },
           {
-            displayName: "Extraction Provider",
-            name: "extractionProvider",
-            type: "options",
+            displayName: "Webhook URL",
+            name: "webhookUrl",
+            type: "string",
             default: "",
-            options: [
-              { name: "Auto (use most recent BYOK key)", value: "" },
-              { name: "OpenAI", value: "openai" },
-              { name: "Anthropic", value: "anthropic" },
-              { name: "OpenRouter", value: "openrouter" },
-              { name: "Groq", value: "groq" },
-            ],
-            description:
-              "LLM provider to use for extraction on each crawled page. Selects the matching BYOK key registered at your AlterLab dashboard.",
+            description: "Notified once when the crawl finishes (legacy; prefer Webhook Config)",
           },
         ],
       },
@@ -2548,6 +2545,43 @@ export class AlterLab implements INodeType {
         },
         options: [
           {
+            displayName: "Concise Content",
+            name: "concise",
+            type: "boolean",
+            default: true,
+            description: 'Whether Unified search returns concise markdown with size caps. Turn off for full-length content.',
+          },
+          {
+            displayName: "Content Latency",
+            name: "searchMode",
+            type: "options",
+            default: "standard",
+            options: [
+              { name: "Fast (5 Seconds)", value: "fast" },
+              { name: "Standard (15 Seconds)", value: "standard" },
+              { name: "Deep (60 Seconds)", value: "deep" },
+            ],
+            description: 'How long to wait for result pages before returning. Pages not done in time are returned as pending and the node polls for them.',
+          },
+          {
+            displayName: "Country",
+            name: "country",
+            type: "string",
+            default: "",
+            placeholder: "US",
+            description:
+              "ISO 3166-1 alpha-2 country code for geo-targeted results (e.g. US, GB, DE)",
+          },
+          {
+            displayName: "Domain Filter",
+            name: "domain",
+            type: "string",
+            default: "",
+            placeholder: "example.com",
+            description:
+              "Restrict results to a specific domain (applied as site: prefix)",
+          },
+          {
             displayName: "Engine",
             name: "engine",
             type: "options",
@@ -2562,11 +2596,21 @@ export class AlterLab implements INodeType {
               "Search engine. Unified (default) fuses several sources into one vendor-neutral result list and returns each result page as concise markdown. Pick an engine to opt out: DuckDuckGo, Google and Bing return the result list only unless Scrape Results is on. Google and Bing render in a browser and cost more",
           },
           {
-            displayName: "Safe Search",
-            name: "safeSearch",
-            type: "boolean",
-            default: true,
-            description: "Whether to filter adult content from results",
+            displayName: "Extraction Schema (JSON)",
+            name: "extractionSchema",
+            type: "json",
+            default: "",
+            placeholder: '{"title": "string", "price": "number"}',
+            description:
+              "JSON schema for structured extraction from result content",
+          },
+          {
+            displayName: "Language",
+            name: "language",
+            type: "string",
+            default: "",
+            placeholder: "en",
+            description: "Language code for results (e.g. en, fr, de)",
           },
           {
             displayName: "Number of Results",
@@ -2585,74 +2629,11 @@ export class AlterLab implements INodeType {
             description: "Result page number (1-indexed)",
           },
           {
-            displayName: "Country",
-            name: "country",
-            type: "string",
-            default: "",
-            placeholder: "US",
-            description:
-              "ISO 3166-1 alpha-2 country code for geo-targeted results (e.g. US, GB, DE)",
-          },
-          {
-            displayName: "Language",
-            name: "language",
-            type: "string",
-            default: "",
-            placeholder: "en",
-            description: "Language code for results (e.g. en, fr, de)",
-          },
-          {
-            displayName: "Domain Filter",
-            name: "domain",
-            type: "string",
-            default: "",
-            placeholder: "example.com",
-            description:
-              "Restrict results to a specific domain (applied as site: prefix)",
-          },
-          {
-            displayName: "Time Range",
-            name: "timeRange",
-            type: "options",
-            default: "",
-            options: [
-              { name: "Any Time", value: "" },
-              { name: "Past Hour", value: "hour" },
-              { name: "Past Day", value: "day" },
-              { name: "Past Week", value: "week" },
-              { name: "Past Month", value: "month" },
-              { name: "Past Year", value: "year" },
-            ],
-            description: "Filter results by recency",
-          },
-          {
-            displayName: "Scrape Results",
-            name: "scrapeResults",
+            displayName: "Safe Search",
+            name: "safeSearch",
             type: "boolean",
             default: true,
-            description:
-              "Whether to scrape each result page and include content in response. On by default with Unified search; turn it off for the result list only. With an explicit engine it is off unless you add this option and enable it",
-          },
-          {
-            displayName: "Concise Content",
-            name: "concise",
-            type: "boolean",
-            default: true,
-            description:
-              "Whether Unified search returns concise markdown with size caps. Turn off for full-length content",
-          },
-          {
-            displayName: "Content Latency",
-            name: "searchMode",
-            type: "options",
-            default: "standard",
-            options: [
-              { name: "Fast (5 s)", value: "fast" },
-              { name: "Standard (15 s)", value: "standard" },
-              { name: "Deep (60 s)", value: "deep" },
-            ],
-            description:
-              "How long to wait for result pages before returning. Pages not done in time are returned as pending and the node polls for them",
+            description: "Whether to filter adult content from results",
           },
           {
             displayName: "Scrape Formats",
@@ -2668,17 +2649,30 @@ export class AlterLab implements INodeType {
               { name: "RAG (Chunked)", value: "rag" },
               { name: "Text", value: "text" },
             ],
-            description:
-              "Output formats for result content. Setting this replaces the concise markdown default",
+            description: 'Output formats for result content. Setting this replaces the concise markdown default.',
           },
           {
-            displayName: "Extraction Schema (JSON)",
-            name: "extractionSchema",
-            type: "json",
-            default: "",
-            placeholder: '{"title": "string", "price": "number"}',
+            displayName: "Scrape Results",
+            name: "scrapeResults",
+            type: "boolean",
+            default: true,
             description:
-              "JSON schema for structured extraction from result content",
+              "Whether to scrape each result page and include content in response. On by default with Unified search; turn it off for the result list only. With an explicit engine it is off unless you add this option and enable it",
+          },
+          {
+            displayName: "Time Range",
+            name: "timeRange",
+            type: "options",
+            default: "",
+            options: [
+              { name: "Any Time", value: "" },
+              { name: "Past Day", value: "day" },
+              { name: "Past Hour", value: "hour" },
+              { name: "Past Month", value: "month" },
+              { name: "Past Week", value: "week" },
+              { name: "Past Year", value: "year" },
+            ],
+            description: "Filter results by recency",
           },
         ],
       },
@@ -2715,12 +2709,46 @@ export class AlterLab implements INodeType {
         },
         options: [
           {
-            displayName: "Max Pages",
-            name: "maxPages",
-            type: "number",
-            default: 500,
-            typeOptions: { minValue: 1, maxValue: 50000 },
-            description: "Maximum URLs to discover (1-50000)",
+            displayName: "Custom Sitemap Path",
+            name: "sitemapPath",
+            type: "string",
+            default: "",
+            placeholder: "/custom-sitemap.xml",
+            description: "Custom sitemap location (must start with /)",
+          },
+          {
+            displayName: "Exclude Patterns",
+            name: "excludePatterns",
+            type: "string",
+            default: "",
+            placeholder: "/admin/*,/login",
+            description:
+              "Comma-separated glob patterns — exclude URLs matching any",
+          },
+          {
+            displayName: "Include Metadata",
+            name: "includeMetadata",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to fetch title and meta description for each URL (slower)",
+          },
+          {
+            displayName: "Include Patterns",
+            name: "includePatterns",
+            type: "string",
+            default: "",
+            placeholder: "/blog/*,/products/*",
+            description:
+              "Comma-separated glob patterns — only include URLs matching at least one",
+          },
+          {
+            displayName: "Include Subdomains",
+            name: "includeSubdomains",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to include URLs from subdomains of the target domain",
           },
           {
             displayName: "Max Depth",
@@ -2729,6 +2757,29 @@ export class AlterLab implements INodeType {
             default: 3,
             typeOptions: { minValue: 0, maxValue: 10 },
             description: "Link-following depth (0 = start page + sitemap only)",
+          },
+          {
+            displayName: "Max Pages",
+            name: "maxPages",
+            type: "number",
+            default: 500,
+            typeOptions: { minValue: 1, maxValue: 50000 },
+            description: "Maximum URLs to discover (1-50000)",
+          },
+          {
+            displayName: "Respect Robots.txt",
+            name: "respectRobots",
+            type: "boolean",
+            default: true,
+            description: "Whether to respect robots.txt directives",
+          },
+          {
+            displayName: "Search Filter",
+            name: "search",
+            type: "string",
+            default: "",
+            placeholder: "pricing documentation",
+            description: "Query to filter/rank discovered URLs by relevance",
           },
           {
             displayName: "Sitemap Mode",
@@ -2753,63 +2804,6 @@ export class AlterLab implements INodeType {
               },
             ],
             description: "Sitemap discovery mode",
-          },
-          {
-            displayName: "Include Patterns",
-            name: "includePatterns",
-            type: "string",
-            default: "",
-            placeholder: "/blog/*,/products/*",
-            description:
-              "Comma-separated glob patterns — only include URLs matching at least one",
-          },
-          {
-            displayName: "Exclude Patterns",
-            name: "excludePatterns",
-            type: "string",
-            default: "",
-            placeholder: "/admin/*,/login",
-            description:
-              "Comma-separated glob patterns — exclude URLs matching any",
-          },
-          {
-            displayName: "Search Filter",
-            name: "search",
-            type: "string",
-            default: "",
-            placeholder: "pricing documentation",
-            description: "Query to filter/rank discovered URLs by relevance",
-          },
-          {
-            displayName: "Include Metadata",
-            name: "includeMetadata",
-            type: "boolean",
-            default: false,
-            description:
-              "Whether to fetch title and meta description for each URL (slower)",
-          },
-          {
-            displayName: "Include Subdomains",
-            name: "includeSubdomains",
-            type: "boolean",
-            default: false,
-            description:
-              "Whether to include URLs from subdomains of the target domain",
-          },
-          {
-            displayName: "Respect Robots.txt",
-            name: "respectRobots",
-            type: "boolean",
-            default: true,
-            description: "Whether to respect robots.txt directives",
-          },
-          {
-            displayName: "Custom Sitemap Path",
-            name: "sitemapPath",
-            type: "string",
-            default: "",
-            placeholder: "/custom-sitemap.xml",
-            description: "Custom sitemap location (must start with /)",
           },
         ],
       },
@@ -2866,6 +2860,131 @@ export class AlterLab implements INodeType {
         },
         options: [
           {
+            displayName: "Cache Control",
+            name: "cache",
+            type: "options",
+            default: "auto",
+            options: [
+              {
+                name: "Auto (Return Cached if Available)",
+                value: "auto",
+                description:
+                  "Return cached LLM extraction result if available, otherwise call the LLM and cache the result",
+              },
+              {
+                name: "Skip (Bypass Cache, Always Call LLM)",
+                value: "skip",
+                description:
+                  "Bypass cache lookup and always invoke the LLM. Result is still stored for future callers.",
+              },
+              {
+                name: "Only (Cached Result or 404)",
+                value: "only",
+                description:
+                  "Return cached result only. Returns HTTP 404 if the result is not cached — never calls the LLM.",
+              },
+            ],
+            description:
+              "Cache control for LLM extraction results. auto: use cache if available (default). skip: always call LLM. only: return cached or 404.",
+          },
+          {
+            displayName: "Cache TTL (Seconds)",
+            name: "cacheTtl",
+            type: "number",
+            default: 3600,
+            typeOptions: { minValue: 1, maxValue: 86400 },
+            description:
+              "How long to cache this extraction result in seconds (1–86400). Defaults to 3600s (1 hour). Max 86400s (24 hours).",
+          },
+          {
+            displayName: "Evidence",
+            name: "evidence",
+            type: "boolean",
+            default: false,
+            description:
+              "Whether to include provenance/evidence for extracted fields",
+          },
+          {
+            displayName: "Extraction Model",
+            name: "extractionModel",
+            type: "string",
+            default: "",
+            placeholder: "gpt-4o",
+            description:
+              "LLM model override for this request in provider-specific format (e.g. gpt-4o, claude-opus-4-5-20251101, llama3-70b-8192). Overrides the model configured on your BYOK key for this request only.",
+          },
+          {
+            displayName: "Extraction Profile",
+            name: "extractionProfile",
+            type: "options",
+            default: "",
+            options: [
+              { name: "Article", value: "article" },
+              { name: "Auto", value: "auto" },
+              { name: "Directory Listing", value: "directory_listing" },
+              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
+              { name: "Event", value: "event" },
+              { name: "FAQ", value: "faq" },
+              { name: "Job Posting", value: "job_posting" },
+              { name: "None", value: "" },
+              { name: "Product", value: "product" },
+              { name: "Recipe", value: "recipe" },
+            ],
+            description: "Pre-defined extraction profile (schema template)",
+          },
+          {
+            displayName: "Extraction Prompt",
+            name: "extractionPrompt",
+            type: "string",
+            typeOptions: { rows: 4 },
+            default: "",
+            placeholder: "Extract the product name, price, and availability...",
+            description: "Natural language extraction instructions for the LLM",
+          },
+          {
+            displayName: "Extraction Provider",
+            name: "extractionProvider",
+            type: "options",
+            default: "",
+            options: [
+              { name: "Anthropic", value: "anthropic" },
+              { name: "Auto (Use Most Recent BYOK Key)", value: "" },
+              { name: "Groq", value: "groq" },
+              { name: "OpenAI", value: "openai" },
+              { name: "OpenRouter", value: "openrouter" },
+            ],
+            description:
+              "LLM provider to use for extraction. Selects the matching BYOK key registered at your AlterLab dashboard.",
+          },
+          {
+            displayName: "Extraction Schema (JSON)",
+            name: "extractionSchema",
+            type: "json",
+            default: "",
+            placeholder: '{"title": "string", "price": "number"}',
+            description: "JSON Schema for structured extraction",
+          },
+          {
+            displayName: "Extraction Template",
+            name: "extractionTemplate",
+            type: "options",
+            default: "",
+            options: [
+              { name: "Article", value: "article" },
+              { name: "Auto", value: "auto" },
+              { name: "Directory Listing", value: "directory_listing" },
+              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
+              { name: "Event", value: "event" },
+              { name: "FAQ", value: "faq" },
+              { name: "Job Posting", value: "job_posting" },
+              { name: "None", value: "" },
+              { name: "Product", value: "product" },
+              { name: "Recipe", value: "recipe" },
+            ],
+            description:
+              "Shorthand alias for Extraction Profile. Mutually exclusive with Extraction Profile — use one or the other.",
+          },
+          {
             displayName: "Formats",
             name: "formats",
             type: "multiOptions",
@@ -2883,86 +3002,6 @@ export class AlterLab implements INodeType {
             description: "Output formats for content transformation",
           },
           {
-            displayName: "Extraction Schema (JSON)",
-            name: "extractionSchema",
-            type: "json",
-            default: "",
-            placeholder: '{"title": "string", "price": "number"}',
-            description: "JSON Schema for structured extraction",
-          },
-          {
-            displayName: "Extraction Profile",
-            name: "extractionProfile",
-            type: "options",
-            default: "",
-            options: [
-              { name: "None", value: "" },
-              { name: "Auto", value: "auto" },
-              { name: "Article", value: "article" },
-              { name: "Directory Listing", value: "directory_listing" },
-              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
-              { name: "Event", value: "event" },
-              { name: "FAQ", value: "faq" },
-              { name: "Job Posting", value: "job_posting" },
-              { name: "Product", value: "product" },
-              { name: "Recipe", value: "recipe" },
-            ],
-            description: "Pre-defined extraction profile (schema template)",
-          },
-          {
-            displayName: "Extraction Template",
-            name: "extractionTemplate",
-            type: "options",
-            default: "",
-            options: [
-              { name: "None", value: "" },
-              { name: "Auto", value: "auto" },
-              { name: "Article", value: "article" },
-              { name: "Directory Listing", value: "directory_listing" },
-              { name: "Ecommerce Homepage", value: "ecommerce_homepage" },
-              { name: "Event", value: "event" },
-              { name: "FAQ", value: "faq" },
-              { name: "Job Posting", value: "job_posting" },
-              { name: "Product", value: "product" },
-              { name: "Recipe", value: "recipe" },
-            ],
-            description:
-              "Shorthand alias for Extraction Profile. Mutually exclusive with Extraction Profile — use one or the other.",
-          },
-          {
-            displayName: "Extraction Prompt",
-            name: "extractionPrompt",
-            type: "string",
-            typeOptions: { rows: 4 },
-            default: "",
-            placeholder: "Extract the product name, price, and availability...",
-            description: "Natural language extraction instructions for the LLM",
-          },
-          {
-            displayName: "Extraction Model",
-            name: "extractionModel",
-            type: "string",
-            default: "",
-            placeholder: "gpt-4o",
-            description:
-              "LLM model override for this request in provider-specific format (e.g. gpt-4o, claude-opus-4-5-20251101, llama3-70b-8192). Overrides the model configured on your BYOK key for this request only.",
-          },
-          {
-            displayName: "Extraction Provider",
-            name: "extractionProvider",
-            type: "options",
-            default: "",
-            options: [
-              { name: "Auto (use most recent BYOK key)", value: "" },
-              { name: "OpenAI", value: "openai" },
-              { name: "Anthropic", value: "anthropic" },
-              { name: "OpenRouter", value: "openrouter" },
-              { name: "Groq", value: "groq" },
-            ],
-            description:
-              "LLM provider to use for extraction. Selects the matching BYOK key registered at your AlterLab dashboard.",
-          },
-          {
             displayName: "Source URL",
             name: "sourceUrl",
             type: "string",
@@ -2970,51 +3009,6 @@ export class AlterLab implements INodeType {
             placeholder: "https://www.example.com/page",
             description:
               "Original URL of the content (for context only, not fetched)",
-          },
-          {
-            displayName: "Evidence",
-            name: "evidence",
-            type: "boolean",
-            default: false,
-            description:
-              "Whether to include provenance/evidence for extracted fields",
-          },
-          {
-            displayName: "Cache Control",
-            name: "cache",
-            type: "options",
-            default: "auto",
-            options: [
-              {
-                name: "Auto (return cached if available)",
-                value: "auto",
-                description:
-                  "Return cached LLM extraction result if available, otherwise call the LLM and cache the result",
-              },
-              {
-                name: "Skip (bypass cache, always call LLM)",
-                value: "skip",
-                description:
-                  "Bypass cache lookup and always invoke the LLM. Result is still stored for future callers.",
-              },
-              {
-                name: "Only (cached result or 404)",
-                value: "only",
-                description:
-                  "Return cached result only. Returns HTTP 404 if the result is not cached — never calls the LLM.",
-              },
-            ],
-            description:
-              "Cache control for LLM extraction results. auto: use cache if available (default). skip: always call LLM. only: return cached or 404.",
-          },
-          {
-            displayName: "Cache TTL (Seconds)",
-            name: "cacheTtl",
-            type: "number",
-            default: 3600,
-            typeOptions: { minValue: 1, maxValue: 86400 },
-            description:
-              "How long to cache this extraction result in seconds (1–86400). Defaults to 3600s (1 hour). Max 86400s (24 hours).",
           },
         ],
       },
@@ -3044,7 +3038,6 @@ export class AlterLab implements INodeType {
             action: "List batches",
           },
         ],
-        description: "The batch operation to perform",
       },
 
       {
@@ -3059,9 +3052,9 @@ export class AlterLab implements INodeType {
             displayName: "Limit",
             name: "limit",
             type: "number",
-            default: 20,
+            default: 50,
             typeOptions: { minValue: 1, maxValue: 50 },
-            description: "Max batches to return (1-50)",
+            description: "Max number of results to return",
           },
           {
             displayName: "Offset",
@@ -3082,8 +3075,7 @@ export class AlterLab implements INodeType {
         required: true,
         placeholder:
           '[{"url": "https://example.com"}, {"url": "https://example.org", "mode": "js"}]',
-        description:
-          'Array of URL objects to scrape in parallel (max 100). Each item: { url, mode?, formats?, advanced?, cost_controls? }. Example: [{"url": "https://example.com", "mode": "auto", "formats": ["markdown"]}]',
+        description: 'Array of URL objects to scrape in parallel (max 100). Each item: { URL, mode?, formats?, advanced?, cost_controls? }. Example: [{"URL": "https://example.com", "mode": "auto", "formats": ["markdown"]}]',
         displayOptions: {
           show: {
             resource: ["batch"],
@@ -3114,21 +3106,6 @@ export class AlterLab implements INodeType {
               "Stored session applied to every URL in the batch (all URLs must match the session's domain)",
           },
           {
-            displayName: "Export Storage Integration ID",
-            name: "exportIntegrationId",
-            type: "string",
-            default: "",
-            description:
-              "Upload results to this storage integration (UUID) when the batch completes",
-          },
-          {
-            displayName: "Export Key Prefix",
-            name: "exportPrefix",
-            type: "string",
-            default: "",
-            description: "Key prefix override for the export (uses the integration default if empty)",
-          },
-          {
             displayName: "Export Format",
             name: "exportFormat",
             type: "options",
@@ -3141,21 +3118,19 @@ export class AlterLab implements INodeType {
             description: "Export file format",
           },
           {
-            displayName: "Webhook URL",
-            name: "webhookUrl",
+            displayName: "Export Key Prefix",
+            name: "exportPrefix",
             type: "string",
             default: "",
-            placeholder: "https://your-server.com/webhook",
-            description:
-              "Webhook URL to receive a batch.completed event when all jobs finish",
+            description: "Key prefix override for the export (uses the integration default if empty)",
           },
           {
-            displayName: "Wait For Completion",
-            name: "waitForCompletion",
-            type: "boolean",
-            default: true,
+            displayName: "Export Storage Integration ID",
+            name: "exportIntegrationId",
+            type: "string",
+            default: "",
             description:
-              "Whether to poll until all batch jobs complete before returning results",
+              "Upload results to this storage integration (UUID) when the batch completes",
           },
           {
             displayName: "Poll Timeout (Seconds)",
@@ -3170,6 +3145,23 @@ export class AlterLab implements INodeType {
                 waitForCompletion: [true],
               },
             },
+          },
+          {
+            displayName: "Wait For Completion",
+            name: "waitForCompletion",
+            type: "boolean",
+            default: true,
+            description:
+              "Whether to poll until all batch jobs complete before returning results",
+          },
+          {
+            displayName: "Webhook URL",
+            name: "webhookUrl",
+            type: "string",
+            default: "",
+            placeholder: "https://your-server.com/webhook",
+            description:
+              "Webhook URL to receive a batch.completed event when all jobs finish",
           },
         ],
       },
@@ -3234,7 +3226,6 @@ export class AlterLab implements INodeType {
             action: "Validate a session",
           },
         ],
-        description: "The session operation to perform",
       },
 
       // ── Session ID (for get/update/delete/validate/refresh) ──
@@ -3301,9 +3292,8 @@ export class AlterLab implements INodeType {
         type: "json",
         default: "",
         required: true,
-        placeholder: '{"session-id": "abc123", "token": "xyz"}',
-        description:
-          'Cookie name-value pairs as JSON object, e.g. {"session-id": "abc123"}',
+        placeholder: '{"cookie-name": "abc123", "token": "xyz"}',
+        description: 'Cookie name-value pairs as JSON object, e.g. {"cookie-name": "abc123"}',
         displayOptions: {
           show: {
             resource: ["session"],
@@ -3366,19 +3356,19 @@ export class AlterLab implements INodeType {
         },
         options: [
           {
-            displayName: "Name",
-            name: "name",
-            type: "string",
-            default: "",
-            description: "New name for the session",
-          },
-          {
             displayName: "Cookies (JSON)",
             name: "cookies",
             type: "json",
             default: "",
-            placeholder: '{"session-id": "new-value"}',
+            placeholder: '{"cookie-name": "new-value"}',
             description: "Updated cookie name-value pairs as JSON object",
+          },
+          {
+            displayName: "Expiration",
+            name: "expiresAt",
+            type: "dateTime",
+            default: "",
+            description: "Updated expiration date",
           },
           {
             displayName: "Headers (JSON)",
@@ -3389,18 +3379,18 @@ export class AlterLab implements INodeType {
             description: "Updated custom headers as JSON object",
           },
           {
+            displayName: "Name",
+            name: "name",
+            type: "string",
+            default: "",
+            description: "New name for the session",
+          },
+          {
             displayName: "Notes",
             name: "notes",
             type: "string",
             default: "",
             description: "Updated notes",
-          },
-          {
-            displayName: "Expiration",
-            name: "expiresAt",
-            type: "dateTime",
-            default: "",
-            description: "Updated expiration date",
           },
         ],
       },
@@ -3411,7 +3401,7 @@ export class AlterLab implements INodeType {
         name: "refreshCookies",
         type: "json",
         default: "",
-        placeholder: '{"session-id": "new-value"}',
+        placeholder: '{"cookie-name": "new-value"}',
         description:
           "New cookie name-value pairs to rotate in. If omitted, only headers are refreshed.",
         displayOptions: {
@@ -3485,11 +3475,11 @@ export class AlterLab implements INodeType {
         const resource = this.getNodeParameter("resource", i) as string;
 
         // ── Detect credential type ────────────────────────
-        let authName = "alterLabApi";
+        let credType = "alterLabApi";
         let credentials: unknown;
         try {
           credentials = await this.getCredentials("alterLabOAuth2Api");
-          authName = "alterLabOAuth2Api";
+          credType = "alterLabOAuth2Api";
         } catch {
           // OAuth2 not configured, fall back to API key
           credentials = await this.getCredentials("alterLabApi");
@@ -3516,7 +3506,7 @@ export class AlterLab implements INodeType {
         if (resource === "account") {
           // GET /api/v1/billing/balance accepts X-API-Key, Bearer sk_ and
           // OAuth (alo_at_) bearer credentials. It is read-only and free.
-          const response = await request(authName, {
+          const response = await request(credType, {
             method: "GET",
             url: apiUrl("/api/v1/billing/balance"),
             json: true,
@@ -3533,6 +3523,7 @@ export class AlterLab implements INodeType {
           }
 
           results.push({
+            pairedItem: { item: i },
             json: formatBalanceResponse(responseBody) as IDataObject,
           });
           continue;
@@ -3602,7 +3593,7 @@ export class AlterLab implements INodeType {
             if (extra.expiresAt) body.expires_at = extra.expiresAt;
 
             const response =
-              await request(authName, {
+              await request(credType, {
                   method: "POST",
                   url: apiUrl("/api/v1/sessions"),
                   body,
@@ -3620,7 +3611,7 @@ export class AlterLab implements INodeType {
               handleApiError(this, statusCode, responseBody as JsonObject, i);
             }
 
-            results.push({ json: formatSessionResponse(responseBody) });
+            results.push({ json: formatSessionResponse(responseBody), pairedItem: { item: i } });
             continue;
           }
 
@@ -3639,7 +3630,7 @@ export class AlterLab implements INodeType {
             if (filters.status) qs.status = filters.status;
 
             const response =
-              await request(authName, {
+              await request(credType, {
                   method: "GET",
                   url: apiUrl("/api/v1/sessions"),
                   qs,
@@ -3664,10 +3655,11 @@ export class AlterLab implements INodeType {
 
             if (data.sessions?.length) {
               for (const session of data.sessions) {
-                results.push({ json: formatSessionResponse(session) });
+                results.push({ json: formatSessionResponse(session), pairedItem: { item: i } });
               }
             } else {
               results.push({
+                pairedItem: { item: i },
                 json: { sessions: [], total: 0 },
               });
             }
@@ -3678,7 +3670,7 @@ export class AlterLab implements INodeType {
             const sessionId = this.getNodeParameter("sessionId", i) as string;
 
             const response =
-              await request(authName, {
+              await request(credType, {
                   method: "GET",
                   url: apiUrl(`/api/v1/sessions/${sessionId}`),
                   json: true,
@@ -3695,7 +3687,7 @@ export class AlterLab implements INodeType {
               handleApiError(this, statusCode, responseBody as JsonObject, i);
             }
 
-            results.push({ json: formatSessionResponse(responseBody) });
+            results.push({ json: formatSessionResponse(responseBody), pairedItem: { item: i } });
             continue;
           }
 
@@ -3747,7 +3739,7 @@ export class AlterLab implements INodeType {
             }
 
             const response =
-              await request(authName, {
+              await request(credType, {
                   method: "PATCH",
                   url: apiUrl(`/api/v1/sessions/${sessionId}`),
                   body,
@@ -3765,7 +3757,7 @@ export class AlterLab implements INodeType {
               handleApiError(this, statusCode, responseBody as JsonObject, i);
             }
 
-            results.push({ json: formatSessionResponse(responseBody) });
+            results.push({ json: formatSessionResponse(responseBody), pairedItem: { item: i } });
             continue;
           }
 
@@ -3773,7 +3765,7 @@ export class AlterLab implements INodeType {
             const sessionId = this.getNodeParameter("sessionId", i) as string;
 
             const response =
-              await request(authName, {
+              await request(credType, {
                   method: "DELETE",
                   url: apiUrl(`/api/v1/sessions/${sessionId}`),
                   json: true,
@@ -3792,6 +3784,7 @@ export class AlterLab implements INodeType {
             }
 
             results.push({
+              pairedItem: { item: i },
               json: { sessionId, deleted: true },
             });
             continue;
@@ -3801,7 +3794,7 @@ export class AlterLab implements INodeType {
             const sessionId = this.getNodeParameter("sessionId", i) as string;
 
             const response =
-              await request(authName, {
+              await request(credType, {
                   method: "POST",
                   url: apiUrl(`/api/v1/sessions/${sessionId}/validate`),
                   json: true,
@@ -3820,6 +3813,7 @@ export class AlterLab implements INodeType {
 
             const data = responseBody as Record<string, unknown>;
             results.push({
+              pairedItem: { item: i },
               json: {
                 sessionId,
                 isValid: data.is_valid ?? false,
@@ -3878,7 +3872,7 @@ export class AlterLab implements INodeType {
             }
 
             const response =
-              await request(authName, {
+              await request(credType, {
                   method: "POST",
                   url: apiUrl(`/api/v1/sessions/${sessionId}/refresh`),
                   body,
@@ -3896,7 +3890,7 @@ export class AlterLab implements INodeType {
               handleApiError(this, statusCode, responseBody as JsonObject, i);
             }
 
-            results.push({ json: formatSessionResponse(responseBody) });
+            results.push({ json: formatSessionResponse(responseBody), pairedItem: { item: i } });
             continue;
           }
 
@@ -3917,7 +3911,7 @@ export class AlterLab implements INodeType {
             const crawlId = this.getNodeParameter("crawlId", i) as string;
 
             const response =
-              await request(authName, {
+              await request(credType, {
                   method: "GET",
                   url: apiUrl(`/api/v1/crawl/${crawlId}`),
                   json: true,
@@ -3934,7 +3928,7 @@ export class AlterLab implements INodeType {
               handleApiError(this, statusCode, responseBody as JsonObject, i);
             }
 
-            results.push({ json: responseBody as IDataObject });
+            results.push({ json: responseBody as IDataObject, pairedItem: { item: i } });
             continue;
           }
 
@@ -3942,7 +3936,7 @@ export class AlterLab implements INodeType {
             const crawlId = this.getNodeParameter("crawlId", i) as string;
 
             const response =
-              await request(authName, {
+              await request(credType, {
                   method: "DELETE",
                   url: apiUrl(`/api/v1/crawl/${crawlId}`),
                   json: true,
@@ -3959,7 +3953,7 @@ export class AlterLab implements INodeType {
               handleApiError(this, statusCode, responseBody as JsonObject, i);
             }
 
-            results.push({ json: responseBody as IDataObject });
+            results.push({ json: responseBody as IDataObject, pairedItem: { item: i } });
             continue;
           }
 
@@ -3976,7 +3970,7 @@ export class AlterLab implements INodeType {
             // Submit the crawl
             const crawlRequestUrl = apiUrl("/api/v1/crawl");
             const startResponse =
-              await request(authName, {
+              await request(credType, {
                   method: "POST",
                   url: crawlRequestUrl,
                   body,
@@ -4021,13 +4015,11 @@ export class AlterLab implements INodeType {
             );
 
             while (Date.now() - pollStart < pollTimeoutMs) {
-              await new Promise<void>((resolve) => {
-                setTimeout(resolve, pollDelay);
-              });
+              await sleep(pollDelay);
               pollDelay = Math.min(pollDelay * 1.5, maxPollDelay);
 
               const pollResponse =
-                await request(authName, {
+                await request(credType, {
                     method: "GET",
                     url: crawlPollUrl,
                     json: true,
@@ -4068,6 +4060,7 @@ export class AlterLab implements INodeType {
             const finalStatus = (finalBody as Record<string, unknown>)
               .status as string;
             results.push({
+              pairedItem: { item: i },
               json: {
                 ...(finalBody as IDataObject),
                 crawlId,
@@ -4085,7 +4078,7 @@ export class AlterLab implements INodeType {
               {},
             ) as CrawlResumeInput;
 
-            const response = await request(authName, {
+            const response = await request(credType, {
               method: "POST",
               url: apiUrl(`/api/v1/crawl/${crawlId}/resume`),
               body: buildCrawlResumeBody(opts),
@@ -4102,7 +4095,7 @@ export class AlterLab implements INodeType {
               handleApiError(this, statusCode, responseBody as JsonObject, i);
             }
 
-            results.push({ json: { crawlId, ...(responseBody as IDataObject) } });
+            results.push({ json: { crawlId, ...(responseBody as IDataObject) }, pairedItem: { item: i } });
             continue;
           }
 
@@ -4117,7 +4110,7 @@ export class AlterLab implements INodeType {
 
             // The endpoint streams a file (json | jsonl | csv), so fetch it
             // as text and parse it ourselves.
-            const response = await request(authName, {
+            const response = await request(credType, {
               method: "GET",
               url: apiUrl(`/api/v1/crawl/${crawlId}/export`),
               qs,
@@ -4146,6 +4139,7 @@ export class AlterLab implements INodeType {
             const rows = parseCrawlExport(rawBody, qs.format);
             if (rows.length === 0) {
               results.push({
+                pairedItem: { item: i },
                 json: {
                   crawlId,
                   format: qs.format,
@@ -4155,7 +4149,7 @@ export class AlterLab implements INodeType {
               });
             } else {
               for (const row of rows) {
-                results.push({ json: row as IDataObject });
+                results.push({ json: row as IDataObject, pairedItem: { item: i } });
               }
             }
             continue;
@@ -4174,7 +4168,7 @@ export class AlterLab implements INodeType {
             if (filters.status) qs.status = filters.status;
             if (filters.domain) qs.domain = filters.domain;
 
-            const response = await request(authName, {
+            const response = await request(credType, {
               method: "GET",
               url: apiUrl("/api/v1/crawl"),
               qs,
@@ -4193,9 +4187,10 @@ export class AlterLab implements INodeType {
 
             const crawls = (responseBody as { crawls?: IDataObject[] }).crawls;
             if (crawls?.length) {
-              for (const crawl of crawls) results.push({ json: crawl });
+              for (const crawl of crawls) results.push({ json: crawl, pairedItem: { item: i } });
             } else {
               results.push({
+                pairedItem: { item: i },
                 json: {
                   crawls: [],
                   total: (responseBody as { total?: number }).total ?? 0,
@@ -4280,7 +4275,7 @@ export class AlterLab implements INodeType {
 
           const searchRequestUrl = apiUrl("/api/v1/search");
           const response =
-            await request(authName, {
+            await request(credType, {
                 method: "POST",
                 url: searchRequestUrl,
                 body,
@@ -4317,16 +4312,14 @@ export class AlterLab implements INodeType {
                 searchRequestUrl,
               );
               while (Date.now() - searchPollStart < maxSearchPollMs) {
-                await new Promise<void>((resolve) => {
-                  setTimeout(resolve, searchPollDelay);
-                });
+                await sleep(searchPollDelay);
                 searchPollDelay = Math.min(
                   searchPollDelay * 1.5,
                   maxSearchPollDelay,
                 );
 
                 const pollResp =
-                  await request(authName, {
+                  await request(credType, {
                       method: "GET",
                       url: searchPollUrl,
                       json: true,
@@ -4355,12 +4348,12 @@ export class AlterLab implements INodeType {
                 if ((finalData.status as string) === "completed") break;
               }
 
-              results.push({ json: finalData as IDataObject });
+              results.push({ json: finalData as IDataObject, pairedItem: { item: i } });
               continue;
             }
           }
 
-          results.push({ json: data as IDataObject });
+          results.push({ json: data as IDataObject, pairedItem: { item: i } });
           continue;
         }
 
@@ -4408,7 +4401,7 @@ export class AlterLab implements INodeType {
           if (opts.sitemapPath) body.sitemap_path = opts.sitemapPath;
 
           const response =
-            await request(authName, {
+            await request(credType, {
                 method: "POST",
                 url: apiUrl("/api/v1/map"),
                 body,
@@ -4426,7 +4419,7 @@ export class AlterLab implements INodeType {
             handleApiError(this, statusCode, responseBody as JsonObject, i);
           }
 
-          results.push({ json: responseBody as IDataObject });
+          results.push({ json: responseBody as IDataObject, pairedItem: { item: i } });
           continue;
         }
 
@@ -4490,7 +4483,7 @@ export class AlterLab implements INodeType {
             body.cache_ttl = opts.cacheTtl;
 
           const response =
-            await request(authName, {
+            await request(credType, {
                 method: "POST",
                 url: apiUrl("/api/v1/extract"),
                 body,
@@ -4541,7 +4534,7 @@ export class AlterLab implements INodeType {
             if (formats.raw !== undefined) output.raw = formats.raw;
           }
 
-          results.push({ json: output });
+          results.push({ json: output, pairedItem: { item: i } });
           continue;
         }
 
@@ -4565,7 +4558,7 @@ export class AlterLab implements INodeType {
             if (filters.offset) qs.offset = filters.offset;
 
             // Note: the history endpoint is /batches (plural).
-            const response = await request(authName, {
+            const response = await request(credType, {
               method: "GET",
               url: apiUrl("/api/v1/batches"),
               qs,
@@ -4585,9 +4578,10 @@ export class AlterLab implements INodeType {
             const batches = (responseBody as { batches?: IDataObject[] })
               .batches;
             if (batches?.length) {
-              for (const batch of batches) results.push({ json: batch });
+              for (const batch of batches) results.push({ json: batch, pairedItem: { item: i } });
             } else {
               results.push({
+                pairedItem: { item: i },
                 json: {
                   batches: [],
                   total: (responseBody as { total?: number }).total ?? 0,
@@ -4624,7 +4618,7 @@ export class AlterLab implements INodeType {
 
           const batchRequestUrl = apiUrl("/api/v1/batch");
           const submitResponse =
-            await request(authName, {
+            await request(credType, {
                 method: "POST",
                 url: batchRequestUrl,
                 body,
@@ -4648,7 +4642,7 @@ export class AlterLab implements INodeType {
             .batch_id as string;
 
           if (!batchId || opts.waitForCompletion === false) {
-            results.push({ json: submitBody as IDataObject });
+            results.push({ json: submitBody as IDataObject, pairedItem: { item: i } });
             continue;
           }
 
@@ -4666,13 +4660,11 @@ export class AlterLab implements INodeType {
           );
 
           while (Date.now() - batchPollStart < batchPollTimeoutMs) {
-            await new Promise<void>((resolve) => {
-              setTimeout(resolve, batchDelay);
-            });
+            await sleep(batchDelay);
             batchDelay = Math.min(batchDelay * 1.5, maxBatchDelay);
 
             const pollResponse =
-              await request(authName, {
+              await request(credType, {
                   method: "GET",
                   url: batchPollUrl,
                   json: true,
@@ -4705,7 +4697,7 @@ export class AlterLab implements INodeType {
             }
           }
 
-          results.push({ json: finalBatchBody as IDataObject });
+          results.push({ json: finalBatchBody as IDataObject, pairedItem: { item: i } });
           continue;
         }
 
@@ -4765,7 +4757,7 @@ export class AlterLab implements INodeType {
           }
 
           const response =
-            await request(authName, {
+            await request(credType, {
                 method: "POST",
                 url: apiUrl("/api/v1/scrape/estimate"),
                 body,
@@ -4785,6 +4777,7 @@ export class AlterLab implements INodeType {
 
           const data = responseBody as Record<string, unknown>;
           results.push({
+            pairedItem: { item: i },
             json: {
               url: (data.url as string) ?? "",
               estimatedTier: (data.estimated_tier as string) ?? "unknown",
@@ -5038,7 +5031,7 @@ export class AlterLab implements INodeType {
 
         // ── Make the API call ─────────────────────────────
         const scrapeRequestUrl = apiUrl("/api/v1/scrape");
-        let response = await request(authName, {
+        const response = await request(credType, {
             method: "POST",
             url: scrapeRequestUrl,
             body,
@@ -5055,6 +5048,7 @@ export class AlterLab implements INodeType {
         if (scrapeExtras.asyncSubmit && statusCode < 400) {
           const jobId = (responseBody?.job_id as string) ?? null;
           results.push({
+            pairedItem: { item: i },
             json: {
               jobId,
               status: (responseBody?.status as string) ?? "queued",
@@ -5084,11 +5078,11 @@ export class AlterLab implements INodeType {
           );
 
           while (Date.now() - pollStart < maxPollTime) {
-            await new Promise<void>((resolve) => setTimeout(resolve, delay));
+            await sleep(delay);
             delay = Math.min(delay * 2, maxDelay);
 
             const pollResponse =
-              await request(authName, {
+              await request(credType, {
                   method: "GET",
                   url: scrapePollUrl,
                   json: true,
@@ -5195,7 +5189,7 @@ export class AlterLab implements INodeType {
         output.billing = billingOut;
         mapScrapeResponseExtras(output, data);
 
-        results.push({ json: output });
+        results.push({ json: output, pairedItem: { item: i } });
       } catch (rawError) {
         const error =
           rawError instanceof ParamError

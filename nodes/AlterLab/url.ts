@@ -1,5 +1,16 @@
 export const DEFAULT_BASE_URL = "https://api.alterlab.io";
 
+type Attempt<T> = { ok: true; value: T } | { ok: false };
+
+/** Run `fn`, reporting failure as a value so callers can throw outside a catch. */
+function attempt<T>(fn: () => T): Attempt<T> {
+  try {
+    return { ok: true, value: fn() };
+  } catch {
+    return { ok: false };
+  }
+}
+
 const API_PREFIX = "/api/v1";
 const POLL_URL_FIELDS = [
   "poll_url",
@@ -41,9 +52,7 @@ export function normalizeBaseUrl(value: unknown): string {
   }
 
   // Reject encoded traversal in a credential base URL before retaining its path.
-  try {
-    canonicalPath(parsed.pathname);
-  } catch {
+  if (!attempt(() => canonicalPath(parsed.pathname)).ok) {
     throw new Error("Invalid AlterLab Base URL path.");
   }
 
@@ -173,12 +182,11 @@ function resolvePollCandidate(
   const reference = parseHttpUrl(referenceValue, "poll URL reference");
   assertWithinApiBoundary(reference, boundary);
 
-  let resolved: URL;
-  try {
-    resolved = new URL(candidate, reference);
-  } catch {
+  const resolvedAttempt = attempt(() => new URL(candidate, reference));
+  if (!resolvedAttempt.ok) {
     throw new Error(`Invalid AlterLab poll URL reference: ${candidate}.`);
   }
+  const resolved = resolvedAttempt.value;
 
   if (resolved.username || resolved.password) {
     throw new Error(
@@ -209,12 +217,11 @@ function assertWithinApiBoundary(url: URL, boundary: ApiBoundary): void {
     );
   }
 
-  let path: string;
-  try {
-    path = canonicalPath(url.pathname);
-  } catch {
+  const pathAttempt = attempt(() => canonicalPath(url.pathname));
+  if (!pathAttempt.ok) {
     throw new Error("Invalid AlterLab poll URL path.");
   }
+  const path = pathAttempt.value;
   const boundaryPath = canonicalPath(boundary.path);
   if (path !== boundaryPath && !path.startsWith(`${boundaryPath}/`)) {
     throw new Error(
@@ -224,18 +231,21 @@ function assertWithinApiBoundary(url: URL, boundary: ApiBoundary): void {
 }
 
 function canonicalPath(pathname: string): string {
-  let decoded = pathname;
-  try {
-    // Decode more than once so double-encoded dot/slash segments cannot evade
-    // the boundary check before a proxy or server decodes them.
+  // Decode more than once so double-encoded dot/slash segments cannot evade
+  // the boundary check before a proxy or server decodes them.
+  const decodedAttempt = attempt(() => {
+    let value = pathname;
     for (let i = 0; i < 3; i++) {
-      const next = decodeURIComponent(decoded);
-      if (next === decoded) break;
-      decoded = next;
+      const next = decodeURIComponent(value);
+      if (next === value) break;
+      value = next;
     }
-  } catch {
+    return value;
+  });
+  if (!decodedAttempt.ok) {
     throw new Error("Invalid URL path encoding.");
   }
+  const decoded = decodedAttempt.value;
 
   const segments = decoded.replace(/\\/g, "/").split("/");
   const normalized: string[] = [];
@@ -254,14 +264,13 @@ function canonicalPath(pathname: string): string {
 }
 
 function parseHttpUrl(value: string, label: string): URL {
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
+  const parsedAttempt = attempt(() => new URL(value));
+  if (!parsedAttempt.ok) {
     throw new Error(
       `Invalid AlterLab ${label}: ${value}. Use an absolute http:// or https:// URL.`,
     );
   }
+  const parsed = parsedAttempt.value;
 
   const protocol = parsed.protocol.toLowerCase();
   if (protocol !== "http:" && protocol !== "https:") {
