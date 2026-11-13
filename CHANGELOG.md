@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.15.3] - 2026-11-13
+
+- Sync node fields with the AlterLab OpenAPI spec
+
 ## [0.15.2] - 2026-11-13
 
 - Pass n8n's community-node vetting ruleset (`@n8n/node-cli` / `eslint-plugin-n8n-nodes-base` / `@n8n/eslint-plugin-community-nodes`) so the node can be verified for n8n Cloud.
