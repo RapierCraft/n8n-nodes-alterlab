@@ -1857,6 +1857,20 @@ export class AlterLab implements INodeType {
             operation: ['scrape'],
           },
         },
+      },
+      // ── Auto-generated from OpenAPI spec ──
+      {
+        displayName: 'Suggestions',
+        name: 'suggestions',
+        type: 'boolean',
+        default: true,
+        description: 'Set false to opt out of the recurring-use `suggestions` item (#40690).',
+        displayOptions: {
+          show: {
+            resource: ['scrape'],
+            operation: ['scrape'],
+          },
+        },
       },//  CRAWL RESOURCE
       // ══════════════════════════════════════════════════════
 
