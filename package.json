@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-alterlab",
-  "version": "0.15.2",
+  "version": "0.15.3",
   "description": "n8n community node for the AlterLab web scraping API — reliable data retrieval, JS rendering, structured extraction, OCR, and more.",
   "keywords": [
     "n8n-community-node-package",
